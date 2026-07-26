@@ -1,0 +1,434 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Gaming Tech Pay Calculator — Star Gold Coast EBA 2026</title>
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<meta name="theme-color" content="#1d6b57">
+<style>
+  :root {
+    --ink: #14100b; --paper: #f6f2ea; --card: #ffffff; --line: #e4ddcd;
+    --green: #1d6b57; --green-soft: #e6efeb; --amber: #b0691a;
+    --ot: #7d4bc4; --rest: #eeeae2; --muted: #7c7365;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: var(--paper); color: var(--ink); line-height: 1.4;
+    padding: 12px; max-width: 780px; margin: 0 auto; -webkit-text-size-adjust: 100%; overflow-x: hidden;
+  }
+  h1 { font-size: 1.35rem; font-weight: 700; letter-spacing: -0.02em; }
+  .sub { color: var(--muted); font-size: 0.85rem; margin: 2px 0 18px; }
+  .totals { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1fr); gap: 10px; margin-bottom: 18px; }
+  .tcard { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 13px 15px; }
+  .tcard.big { grid-column: 1/-1; background: var(--green); color: #fff; border-color: var(--green); }
+  .tcard .lab { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); }
+  .tcard.big .lab { color: #cfe6dd; }
+  .tcard .val { font-size: 1.45rem; font-weight: 700; margin-top: 3px; font-variant-numeric: tabular-nums; }
+  .tcard.big .val { font-size: 1.95rem; }
+  .day { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; margin-bottom: 9px; }
+  .day.rest { background: var(--rest); }
+  .day-head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 9px; gap: 8px; }
+  .day-name { font-weight: 600; font-size: 0.95rem; }
+  .day-date { color: var(--muted); font-size: 0.8rem; }
+  .day-pay { font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .row { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1fr); gap: 8px; margin-bottom: 8px; }
+  .row3 { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1fr) 72px; gap: 8px; margin-bottom: 8px; }
+  .field { min-width: 0; }
+  .field label { display: block; font-size: 0.68rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 3px; }
+  select, input[type="number"] {
+    width: 100%; min-width: 0; max-width: 100%; padding: 8px 6px; border: 1px solid var(--line);
+    border-radius: 8px; font-size: 16px; background: #fff; color: var(--ink); font-family: inherit;
+  }
+  select { font-size: 14px; }
+  input:focus, select:focus { outline: 2px solid var(--green); outline-offset: 0; border-color: var(--green); }
+  .note { font-size: 0.74rem; color: var(--muted); margin-top: 7px; min-height: 1em; display: flex; flex-wrap: wrap; align-items: center; }
+  .note .tag { display: inline-block; padding: 1px 6px; border-radius: 5px; font-size: 0.68rem; font-weight: 600; margin: 1px 4px 1px 0; }
+  .tag.sat { background: #fdeede; color: var(--amber); }
+  .tag.sun { background: #fbe4e4; color: #b03636; }
+  .tag.ph  { background: #efe1fb; color: var(--ot); }
+  .tag.ot  { background: #efe1fb; color: var(--ot); }
+  .tag.pen { background: var(--green-soft); color: var(--green); }
+  details.settings { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 4px 16px; margin-bottom: 18px; }
+  details.settings summary { font-weight: 600; cursor: pointer; padding: 12px 0; list-style: none; }
+  details.settings summary::-webkit-details-marker { display: none; }
+  details.settings summary::before { content: "⚙  "; }
+  .set-grid { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1fr); gap: 10px 14px; padding: 8px 0 16px; }
+  .set-grid .field.full { grid-column: 1/-1; }
+  .set-h { grid-column: 1/-1; font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--green); font-weight: 700; margin-top: 8px; }
+  .set-note { font-size: 0.74rem; color: var(--muted); grid-column: 1/-1; padding-top: 6px; border-top: 1px dashed var(--line); }
+  @media (max-width: 400px) {
+    .tcard .val { font-size: 1.2rem; }
+    .tcard.big .val { font-size: 1.6rem; }
+    .day-pay { font-size: 0.9rem; }
+    .day-name { font-size: 0.9rem; }
+    body { padding: 10px; }
+  }
+  .week-label { font-size: 0.74rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); font-weight: 700; margin: 16px 0 8px; }
+  .disclaimer { font-size: 0.75rem; color: var(--muted); margin-top: 16px; padding: 12px 14px; background: #fff; border: 1px solid var(--line); border-radius: 10px; }
+  .disclaimer strong { color: var(--amber); }
+</style>
+</head>
+<body>
+
+<h1>Fortnight Pay Calculator</h1>
+<div class="sub">Gaming Technicians · The Star Gold Coast EBA 2026 · logic verified against clauses 6.7, 6.10, 6.11, 7.1</div>
+
+<div class="totals">
+  <div class="tcard"><div class="lab">Paid ordinary hrs</div><div class="val" id="totOrd">0.0</div></div>
+  <div class="tcard"><div class="lab">Overtime hrs</div><div class="val" id="totOT">0.0</div></div>
+  <div class="tcard"><div class="lab">Gross pay</div><div class="val" id="totGross">$0</div></div>
+  <div class="tcard"><div class="lab">Est. tax</div><div class="val" id="totTax">$0</div></div>
+  <div class="tcard big"><div class="lab">Estimated take-home</div><div class="val" id="totNet">$0</div></div>
+</div>
+
+<details class="settings">
+  <summary>Rates &amp; settings — tap to edit</summary>
+  <div class="set-grid">
+    <div class="set-h">Your classification — Attachment E / wage tables H–K</div>
+    <div class="field full">
+      <label>Job title</label>
+      <select id="s_class">
+        <option value="ta1">Trade Assistant Level 1</option>
+        <option value="ta2">Trade Assistant Level 2</option>
+        <option value="gt1">Gaming Technician Level 1</option>
+        <option value="gt2" selected>Gaming Technician Level 2</option>
+        <option value="cmo">Casino Maintenance Officer</option>
+        <option value="gt3">Gaming Technician Level 3</option>
+      </select>
+    </div>
+    <div class="field full">
+      <label>Wage year</label>
+      <select id="s_year">
+        <option value="2026" selected>July 2026</option>
+        <option value="2027">July 2027</option>
+        <option value="2028">July 2028</option>
+        <option value="2029">July 2029</option>
+      </select>
+    </div>
+    <div class="field full"><label>Hourly rate ($) — set automatically, override if needed</label><input type="number" id="s_rate" value="42.12" step="0.01"></div>
+
+    <div class="set-h">Day multipliers — clause 6.10(a), permanent</div>
+    <div class="field"><label>Weekday %</label><input type="number" id="s_mWeekday" value="100"></div>
+    <div class="field"><label>Saturday %</label><input type="number" id="s_mSat" value="125"></div>
+    <div class="field"><label>Sunday %</label><input type="number" id="s_mSun" value="175"></div>
+    <div class="field"><label>Public holiday %</label><input type="number" id="s_mPH" value="250"></div>
+
+    <div class="set-h">Shift penalties $/hr — clause 6.10(b), published 2026 figures</div>
+    <div class="field"><label>Morning Mon–Fri 12am–7am</label><input type="number" id="s_pMorning" value="4.55" step="0.01"></div>
+    <div class="field"><label>Afternoon Mon–Thu 7pm–12am</label><input type="number" id="s_pAfternoon" value="3.04" step="0.01"></div>
+    <div class="field full"><label>Friday night 7pm–12am</label><input type="number" id="s_pFriNight" value="3.04" step="0.01"></div>
+
+    <div class="set-h">Overtime — clause 6.11(e)</div>
+    <div class="field"><label>Wkday OT first 2 hrs %</label><input type="number" id="s_ot1" value="150"></div>
+    <div class="field"><label>Wkday OT after 2 hrs %</label><input type="number" id="s_ot2" value="200"></div>
+    <div class="field full"><label>Weekend / RDO OT % (flat)</label><input type="number" id="s_otWknd" value="200"></div>
+
+    <div class="set-h">Leave — clause 7.1(d)</div>
+    <div class="field full"><label>Annual leave loading %</label><input type="number" id="s_alLoad" value="20"></div>
+
+    <div class="set-h">Tax estimate</div>
+    <div class="field full"><label>Effective tax rate on this fortnight (%)</label><input type="number" id="s_tax" value="30" step="0.1"></div>
+    <div class="set-note">Tax is an estimate only. Take the PAYG amount from a payslip with similar gross, divide by that gross, and enter your real rate here.</div>
+  </div>
+</details>
+
+<div id="days"></div>
+
+<div class="disclaimer">
+  <strong>Assumptions you should know.</strong>
+  Unpaid meal breaks (default 30 min, clause 6.7) are deducted starting 2.5 hrs after shift start — so a 6am–6pm shift pays 11.5 hrs.
+  Midnight-crossing shifts split at midnight for day rates and penalty windows.
+  Weekday OT is tiered 150%/200% per shift; OT falling between midnight Friday and midnight Sunday pays 200%; OT on an RDO pays 200% with a 4-hour minimum.
+  Shift penalties are not added on overtime hours, and public holidays pay 250% with no stacked shift penalty — the EBA doesn't state either rule explicitly, so confirm both against a payslip.
+  Take-home is an estimate, not your payslip.
+</div>
+
+<script>
+const DAYS = [
+  {name:"Monday",    date:"13 Jul", dow:1},
+  {name:"Tuesday",   date:"14 Jul", dow:2},
+  {name:"Wednesday", date:"15 Jul", dow:3},
+  {name:"Thursday",  date:"16 Jul", dow:4},
+  {name:"Friday",    date:"17 Jul", dow:5},
+  {name:"Saturday",  date:"18 Jul", dow:6},
+  {name:"Sunday",    date:"19 Jul", dow:0},
+  {name:"Monday",    date:"20 Jul", dow:1},
+  {name:"Tuesday",   date:"21 Jul", dow:2},
+  {name:"Wednesday", date:"22 Jul", dow:3},
+  {name:"Thursday",  date:"23 Jul", dow:4},
+  {name:"Friday",    date:"24 Jul", dow:5},
+  {name:"Saturday",  date:"25 Jul", dow:6},
+  {name:"Sunday",    date:"26 Jul", dow:0},
+];
+// Gaming Technician Classifications, Attachments H-K (permanent ordinary hourly rate)
+// Table levels 1-5 for each wage year.
+const GT_RATES = {
+  2026: {1:29.94, 2:36.58, 3:39.19, 4:42.12, 5:43.99},
+  2027: {1:31.14, 2:38.04, 3:40.76, 4:43.81, 5:45.75},
+  2028: {1:32.23, 2:39.37, 3:42.18, 4:45.34, 5:47.36},
+  2029: {1:33.36, 2:40.75, 3:43.66, 4:46.93, 5:49.01},
+};
+// Job titles -> classification table level (Attachment E)
+const ROLES = [
+  {id:"ta1",  label:"Trade Assistant Level 1",      lvl:1},
+  {id:"ta2",  label:"Trade Assistant Level 2",      lvl:2},
+  {id:"gt1",  label:"Gaming Technician Level 1",    lvl:3},
+  {id:"gt2",  label:"Gaming Technician Level 2",    lvl:4},
+  {id:"cmo",  label:"Casino Maintenance Officer",   lvl:4},
+  {id:"gt3",  label:"Gaming Technician Level 3",    lvl:5},
+];
+function roleRate(roleId, year){
+  const r = ROLES.find(x=>x.id===roleId);
+  return r ? GT_RATES[year][r.lvl] : GT_RATES[year][4];
+}
+const state = DAYS.map(() => ({start:"", finish:"", otMode:"none", type:"ordinary", breakMin:30, leaveHrs:7.6}));
+
+function num(id){ return parseFloat(document.getElementById(id).value) || 0; }
+function settings(){
+  return {
+    rate: num('s_rate'),
+    mult: {weekday:num('s_mWeekday')/100, sat:num('s_mSat')/100, sun:num('s_mSun')/100, ph:num('s_mPH')/100},
+    pen: {morning:num('s_pMorning'), afternoon:num('s_pAfternoon'), friNight:num('s_pFriNight')},
+    ot: {t1:num('s_ot1')/100, t2:num('s_ot2')/100, wknd:num('s_otWknd')/100},
+    alLoad: num('s_alLoad')/100,
+    tax: num('s_tax')/100,
+  };
+}
+function dayMult(dow,s){ if(dow===6) return s.mult.sat; if(dow===0) return s.mult.sun; return s.mult.weekday; }
+function shiftMinutes(d){
+  if(!d.start || !d.finish) return null;
+  let [sh,sm]=d.start.split(":").map(Number), [fh,fm]=d.finish.split(":").map(Number);
+  let a=sh*60+sm, b=fh*60+fm;
+  if(b<=a) b+=1440;
+  return {a,b};
+}
+function breakWindow(a,b,breakMin){
+  if(breakMin<=0 || (b-a)<=breakMin) return null;
+  // Break taken 2.5 hrs after shift start; if the shift is too short, fall back to mid-shift.
+  let s = a + 150;
+  if(s + breakMin > b){ s = (a+b)/2 - breakMin/2; }
+  return {s, e:s+breakMin};
+}
+
+function calcDay(i){
+  const d=state[i], meta=DAYS[i], s=settings();
+
+  if(d.type==="rdo") return {ordH:0, otH:0, pay:0, tags:[], label:"Rostered day off"};
+  if(d.type==="annual"){
+    const p=s.rate*d.leaveHrs*(1+s.alLoad);
+    return {ordH:d.leaveHrs, otH:0, pay:p, tags:[{c:"pen",t:"Annual leave +"+(s.alLoad*100).toFixed(0)+"% loading"}], label:d.leaveHrs+" hrs"};
+  }
+  if(d.type==="personal"){
+    return {ordH:d.leaveHrs, otH:0, pay:s.rate*d.leaveHrs, tags:[{c:"pen",t:"Personal leave"}], label:d.leaveHrs+" hrs @ ordinary"};
+  }
+
+  const t=shiftMinutes(d);
+  if(!t) return {ordH:0, otH:0, pay:0, tags: d.type==="ph"?[{c:"ph",t:"Public holiday"}]:[], label: d.type==="ph"?"Enter times":""};
+
+  const bw=breakWindow(t.a,t.b,d.breakMin);
+  const isPH=d.type==="ph";
+
+  if(d.otMode!=="none" && !isPH){
+    const onRDO = d.otMode==="otRdo";
+    let pay=0, wkdayOTmins=0, mins=0;
+    for(let m=t.a; m<t.b; m++){
+      if(bw && m>=bw.s && m<bw.e) continue;
+      mins++;
+      const crossed=m>=1440, dow=crossed?(meta.dow+1)%7:meta.dow, frac=1/60;
+      if(onRDO) pay += s.rate*s.ot.wknd*frac;
+      else if(dow===6||dow===0) pay += s.rate*s.ot.wknd*frac;
+      else { wkdayOTmins++; pay += s.rate*(wkdayOTmins<=120?s.ot.t1:s.ot.t2)*frac; }
+    }
+    let hrs=mins/60, tags=[], label=hrs.toFixed(2)+" hrs";
+    if(onRDO && hrs<4){ pay=s.rate*s.ot.wknd*4; hrs=4; label="min 4 hrs applied"; }
+    tags.push({c:"ot", t: onRDO ? "RDO OT x"+s.ot.wknd : "Overtime"});
+    return {ordH:0, otH:hrs, pay, tags, label};
+  }
+
+  let pay=0, pen=0, mins=0, sawSat=false, sawSun=false;
+  for(let m=t.a; m<t.b; m++){
+    if(bw && m>=bw.s && m<bw.e) continue;
+    mins++;
+    const abs=m%1440, crossed=m>=1440, dow=crossed?(meta.dow+1)%7:meta.dow;
+    const frac=1/60, hour=abs/60;
+    pay += s.rate * (isPH ? s.mult.ph : dayMult(dow,s)) * frac;
+    if(!isPH){
+      if(dow===6) sawSat=true;
+      if(dow===0) sawSun=true;
+      const wkday=dow>=1&&dow<=5, fri=dow===5;
+      if(wkday && hour<7) pen += s.pen.morning*frac;
+      else if(hour>=19&&hour<24){
+        if(fri) pen += s.pen.friNight*frac;
+        else if(dow>=1&&dow<=4) pen += s.pen.afternoon*frac;
+      }
+    }
+  }
+  let hrs=mins/60, tags=[];
+  if(isPH){
+    if(hrs<4){ pay=s.rate*s.mult.ph*4; hrs=4; }
+    pay=pay; tags.push({c:"ph",t:"Public holiday x"+s.mult.ph});
+  } else {
+    pay+=pen;
+    if(sawSat) tags.push({c:"sat",t:"Sat rate"});
+    if(sawSun) tags.push({c:"sun",t:"Sun rate"});
+    if(pen>0) tags.push({c:"pen",t:"penalty $"+pen.toFixed(2)});
+  }
+  return {ordH:hrs, otH:0, pay, tags, label:hrs.toFixed(2)+" hrs paid"};
+}
+
+function fmt(n){ return "$"+n.toLocaleString('en-AU',{minimumFractionDigits:2,maximumFractionDigits:2}); }
+
+function timeOptions(){
+  let out = '<option value="">—</option>';
+  for(let h=0; h<24; h++){
+    for(const m of [0,15,30,45]){
+      const v = String(h).padStart(2,'0')+':'+String(m).padStart(2,'0');
+      const h12 = (h%12)===0 ? 12 : h%12;
+      const ap = h<12 ? 'am' : 'pm';
+      out += `<option value="${v}">${h12}:${String(m).padStart(2,'0')} ${ap}</option>`;
+    }
+  }
+  return out;
+}
+
+// ---- Build the page ONCE. Never rebuild inputs. ----
+function buildDays(){
+  const wrap=document.getElementById('days');
+  DAYS.forEach((meta,i)=>{
+    if(i===0){ const w=document.createElement('div'); w.className="week-label"; w.textContent="Week 1  ·  13–19 Jul"; wrap.appendChild(w); }
+    if(i===7){ const w=document.createElement('div'); w.className="week-label"; w.textContent="Week 2  ·  20–26 Jul"; wrap.appendChild(w); }
+    const el=document.createElement('div');
+    el.className="day"; el.id="day"+i;
+    el.innerHTML=`
+      <div class="day-head">
+        <div><span class="day-name">${meta.name}</span> <span class="day-date">${meta.date}</span></div>
+        <div class="day-pay" id="pay${i}">$0.00</div>
+      </div>
+      <div class="row">
+        <div class="field"><label>Day type</label>
+          <select data-i="${i}" data-f="type" id="type${i}">
+            <option value="ordinary">Worked shift</option>
+            <option value="rdo">Rostered day off</option>
+            <option value="annual">Annual leave</option>
+            <option value="personal">Personal / sick</option>
+            <option value="ph">Public holiday (worked)</option>
+          </select>
+        </div>
+        <div class="field"><label>Shift basis</label>
+          <select data-i="${i}" data-f="otMode" id="ot${i}">
+            <option value="none">Ordinary hours</option>
+            <option value="ot">Overtime</option>
+            <option value="otRdo">Overtime on my RDO</option>
+          </select>
+        </div>
+      </div>
+      <div class="row3" id="times${i}">
+        <div class="field"><label>Start</label><select data-i="${i}" data-f="start" id="start${i}">${timeOptions()}</select></div>
+        <div class="field"><label>Finish</label><select data-i="${i}" data-f="finish" id="finish${i}">${timeOptions()}</select></div>
+        <div class="field"><label>Break min</label><input type="number" value="30" min="0" step="5" data-i="${i}" data-f="breakMin"></div>
+      </div>
+      <div class="row" id="leaverow${i}" style="display:none">
+        <div class="field"><label>Leave hours</label><input type="number" value="7.6" min="0" step="0.1" data-i="${i}" data-f="leaveHrs"></div>
+        <div></div>
+      </div>
+      <div class="note" id="note${i}"></div>
+    `;
+    wrap.appendChild(el);
+  });
+}
+
+// ---- Update only text/visibility. Inputs are untouched. ----
+function refresh(){
+  let ordH=0, otH=0, gross=0;
+  DAYS.forEach((meta,i)=>{
+    const d=state[i], r=calcDay(i);
+    ordH+=r.ordH; otH+=r.otH; gross+=r.pay;
+    document.getElementById('pay'+i).textContent=fmt(r.pay);
+    const tagHtml=(r.tags||[]).map(x=>`<span class="tag ${x.c}">${x.t}</span>`).join("");
+    document.getElementById('note'+i).innerHTML=tagHtml+(r.label?`<span>${r.label}</span>`:"");
+    const isRest=d.type==="rdo", isLeave=d.type==="annual"||d.type==="personal";
+    document.getElementById('day'+i).classList.toggle('rest', isRest);
+    document.getElementById('times'+i).style.display=(d.type==="ordinary"||d.type==="ph")?"":"none";
+    document.getElementById('leaverow'+i).style.display=isLeave?"":"none";
+    document.getElementById('ot'+i).disabled=(isRest||isLeave||d.type==="ph");
+  });
+  const s=settings(), tax=gross*s.tax;
+  document.getElementById('totOrd').textContent=ordH.toFixed(1);
+  document.getElementById('totOT').textContent=otH.toFixed(1);
+  document.getElementById('totGross').textContent=fmt(gross);
+  document.getElementById('totTax').textContent=fmt(tax);
+  document.getElementById('totNet').textContent=fmt(gross-tax);
+}
+
+// 'change' fires when the phone's time picker is confirmed; 'input' covers desktop typing.
+function handle(e){
+  const t=e.target;
+  if(t.dataset && t.dataset.i!==undefined){
+    const i=+t.dataset.i, f=t.dataset.f;
+    if(f==="breakMin"||f==="leaveHrs") state[i][f]=parseFloat(t.value)||0;
+    else state[i][f]=t.value;
+    refresh();
+  } else if(t.id==="s_year" || t.id==="s_class"){
+    const yr = document.getElementById('s_year').value;
+    const cls = document.getElementById('s_class').value;
+    document.getElementById('s_rate').value = roleRate(cls, yr).toFixed(2);
+    refresh();
+  } else if(t.id && t.id.startsWith('s_')){
+    refresh();
+  }
+  saveState();
+}
+document.addEventListener('change', handle);
+document.addEventListener('input', handle);
+
+// Ties saved day entries to this specific fortnight — bump when DAYS' dates change for a new period.
+const STORAGE_KEY = 'payCalcV1';
+const PERIOD_ID = '2026-07-13';
+const SETTING_IDS = ['s_class','s_year','s_rate','s_mWeekday','s_mSat','s_mSun','s_mPH','s_pMorning','s_pAfternoon','s_pFriNight','s_ot1','s_ot2','s_otWknd','s_alLoad','s_tax'];
+
+function saveState(){
+  const settingsVals={};
+  SETTING_IDS.forEach(id=>{ settingsVals[id]=document.getElementById(id).value; });
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({periodId:PERIOD_ID, settings:settingsVals, days:state}));
+  } catch(e){}
+}
+
+function restoreState(){
+  let data;
+  try { data=JSON.parse(localStorage.getItem(STORAGE_KEY)); } catch(e){ data=null; }
+  if(!data) return;
+  if(data.settings){
+    SETTING_IDS.forEach(id=>{
+      if(id in data.settings){ const el=document.getElementById(id); if(el) el.value=data.settings[id]; }
+    });
+  }
+  if(data.periodId===PERIOD_ID && Array.isArray(data.days)){
+    data.days.forEach((d,i)=>{
+      if(!state[i] || !d) return;
+      Object.assign(state[i], d);
+      const setVal=(sel,val)=>{ const el=document.querySelector(sel); if(el && val!==undefined) el.value=val; };
+      setVal(`#type${i}`, d.type);
+      setVal(`#ot${i}`, d.otMode);
+      setVal(`#start${i}`, d.start);
+      setVal(`#finish${i}`, d.finish);
+      setVal(`[data-i="${i}"][data-f="breakMin"]`, d.breakMin);
+      setVal(`[data-i="${i}"][data-f="leaveHrs"]`, d.leaveHrs);
+    });
+  }
+}
+
+buildDays();
+restoreState();
+refresh();
+
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('sw.js');
+}
+</script>
+</body>
+</html>
