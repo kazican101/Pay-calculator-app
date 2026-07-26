@@ -1,8 +1,8 @@
 {
   "name": "Gaming Tech Pay Calculator",
   "short_name": "Pay Calc",
-  "start_url": "/pay/",
-  "scope": "/pay/",
+  "start_url": "./",
+  "scope": "./",
   "display": "standalone",
   "background_color": "#f6f2ea",
   "theme_color": "#1d6b57",

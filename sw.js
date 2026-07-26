@@ -1,10 +1,10 @@
 const CACHE = 'pay-calc-v4';
 const ASSETS = [
-  '/pay/',
-  '/pay/index.html',
-  '/pay/manifest.json',
-  '/pay/icon-192.png',
-  '/pay/icon-512.png'
+  './',
+  './index.html',
+  './manifest.json',
+  './icon-192.png',
+  './icon-512.png'
 ];
 
 self.addEventListener('install', (e) => {
