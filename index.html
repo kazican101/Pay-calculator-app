@@ -174,22 +174,38 @@
 </div>
 
 <script>
-const DAYS = [
-  {name:"Monday",    date:"13 Jul", dow:1},
-  {name:"Tuesday",   date:"14 Jul", dow:2},
-  {name:"Wednesday", date:"15 Jul", dow:3},
-  {name:"Thursday",  date:"16 Jul", dow:4},
-  {name:"Friday",    date:"17 Jul", dow:5},
-  {name:"Saturday",  date:"18 Jul", dow:6},
-  {name:"Sunday",    date:"19 Jul", dow:0},
-  {name:"Monday",    date:"20 Jul", dow:1},
-  {name:"Tuesday",   date:"21 Jul", dow:2},
-  {name:"Wednesday", date:"22 Jul", dow:3},
-  {name:"Thursday",  date:"23 Jul", dow:4},
-  {name:"Friday",    date:"24 Jul", dow:5},
-  {name:"Saturday",  date:"25 Jul", dow:6},
-  {name:"Sunday",    date:"26 Jul", dow:0},
-];
+// Reference: a known fortnight START (Monday). Set once, never change.
+const FORTNIGHT_REFERENCE = new Date(2026, 5, 29); // 29 Jun 2026 (month 0-indexed: 5 = June)
+
+// Work out the current fortnight's start date from today.
+function getCurrentFortnightStart() {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  const msPerDay = 24 * 60 * 60 * 1000;
+  const daysSinceRef = Math.floor((today - FORTNIGHT_REFERENCE) / msPerDay);
+  const fortnightsPassed = Math.floor(daysSinceRef / 14);
+
+  const start = new Date(FORTNIGHT_REFERENCE);
+  start.setDate(start.getDate() + fortnightsPassed * 14);
+  return start;
+}
+
+const DAY_NAMES = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
+const MONTH_NAMES = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+function fmtShortDate(d){ return d.getDate()+" "+MONTH_NAMES[d.getMonth()]; }
+function formatWeekRange(d0, d1){
+  if(d0.getMonth() === d1.getMonth()) return d0.getDate()+"–"+d1.getDate()+" "+MONTH_NAMES[d1.getMonth()];
+  return fmtShortDate(d0)+"–"+fmtShortDate(d1);
+}
+function isoDate(d){ return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0"); }
+
+const FORTNIGHT_START = getCurrentFortnightStart();
+const DAYS = Array.from({length:14}, (_, i) => {
+  const d = new Date(FORTNIGHT_START);
+  d.setDate(d.getDate() + i);
+  return { name: DAY_NAMES[d.getDay()], date: fmtShortDate(d), dow: d.getDay() };
+});
 // Gaming Technician Classifications, Attachments H-K (permanent ordinary hourly rate)
 // Table levels 1-5 for each wage year.
 const GT_RATES = {
@@ -325,8 +341,17 @@ function timeOptions(){
 function buildDays(){
   const wrap=document.getElementById('days');
   DAYS.forEach((meta,i)=>{
-    if(i===0){ const w=document.createElement('div'); w.className="week-label"; w.textContent="Week 1  ·  13–19 Jul"; wrap.appendChild(w); }
-    if(i===7){ const w=document.createElement('div'); w.className="week-label"; w.textContent="Week 2  ·  20–26 Jul"; wrap.appendChild(w); }
+    if(i===0){
+      const w1e=new Date(FORTNIGHT_START); w1e.setDate(w1e.getDate()+6);
+      const w=document.createElement('div'); w.className="week-label";
+      w.textContent="Week 1  ·  "+formatWeekRange(FORTNIGHT_START, w1e); wrap.appendChild(w);
+    }
+    if(i===7){
+      const w2s=new Date(FORTNIGHT_START); w2s.setDate(w2s.getDate()+7);
+      const w2e=new Date(FORTNIGHT_START); w2e.setDate(w2e.getDate()+13);
+      const w=document.createElement('div'); w.className="week-label";
+      w.textContent="Week 2  ·  "+formatWeekRange(w2s, w2e); wrap.appendChild(w);
+    }
     const el=document.createElement('div');
     el.className="day"; el.id="day"+i;
     el.innerHTML=`
@@ -414,7 +439,7 @@ document.addEventListener('input', handle);
 
 // Ties saved day entries to this specific fortnight — bump when DAYS' dates change for a new period.
 const STORAGE_KEY = 'payCalcV1';
-const PERIOD_ID = '2026-07-13';
+const PERIOD_ID = isoDate(FORTNIGHT_START); // auto-derived, rolls forward every fortnight
 const SETTING_IDS = ['s_class','s_year','s_rate','s_mWeekday','s_mSat','s_mSun','s_mPH','s_pMorning','s_pAfternoon','s_pFriNight','s_ot1','s_ot2','s_otWknd','s_alLoad','s_tax'];
 
 function saveState(){
