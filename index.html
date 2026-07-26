@@ -60,6 +60,14 @@
   .set-grid .field.full { grid-column: 1/-1; }
   .set-h { grid-column: 1/-1; font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--green); font-weight: 700; margin-top: 8px; }
   .set-note { font-size: 0.74rem; color: var(--muted); grid-column: 1/-1; padding-top: 6px; border-top: 1px dashed var(--line); }
+  .set-note.plain { border-top: none; padding-top: 0; }
+  button { font-family: inherit; font-size: 14px; padding: 10px 14px; border-radius: 8px; border: 1px solid var(--line); background: #fff; color: var(--ink); cursor: pointer; }
+  button.btn-primary { background: var(--green); color: #fff; border-color: var(--green); font-weight: 600; }
+  button:active { opacity: 0.85; }
+  .stats { grid-column: 1/-1; display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 8px; }
+  .stat { background: var(--paper); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; text-align: center; }
+  .stat .n { font-weight: 700; font-size: 1.05rem; }
+  .stat .l { font-size: 0.65rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; margin-top: 2px; }
   @media (max-width: 400px) {
     .tcard .val { font-size: 1.2rem; }
     .tcard.big .val { font-size: 1.6rem; }
@@ -133,6 +141,24 @@
     <div class="set-h">Tax estimate</div>
     <div class="field full"><label>Effective tax rate on this fortnight (%)</label><input type="number" id="s_tax" value="30" step="0.1"></div>
     <div class="set-note">Tax is an estimate only. Take the PAYG amount from a payslip with similar gross, divide by that gross, and enter your real rate here.</div>
+  </div>
+</details>
+
+<details class="settings">
+  <summary>💾 Backup — save or restore your entries</summary>
+  <div class="set-grid">
+    <div class="set-h">Save a backup</div>
+    <div class="field full"><p class="set-note plain">Your entries live only in this phone's browser. If you lose this phone or clear its site data, they're gone. Export a copy and keep it somewhere safe (email it to yourself, or save to cloud storage).</p></div>
+    <div class="field full"><button type="button" class="btn-primary" onclick="exportData()">⬇️ Export backup file</button></div>
+    <div class="stats" id="backupStats"></div>
+
+    <div class="set-h">Restore from a backup</div>
+    <div class="field full"><p class="set-note plain">Loads a previously exported file. This <b>replaces everything</b> currently entered — you'll be asked to confirm first, and a safety copy of your current data downloads automatically.</p></div>
+    <div class="field full">
+      <input id="importFile" type="file" accept="application/json,.json" style="display:none" onchange="importData(this)">
+      <button type="button" onclick="document.getElementById('importFile').click()">⬆️ Choose backup file…</button>
+    </div>
+    <div class="field full"><p class="set-note plain" id="backupNote"></p></div>
   </div>
 </details>
 
@@ -362,6 +388,7 @@ function refresh(){
   document.getElementById('totGross').textContent=fmt(gross);
   document.getElementById('totTax').textContent=fmt(tax);
   document.getElementById('totNet').textContent=fmt(gross-tax);
+  renderBackup();
 }
 
 // 'change' fires when the phone's time picker is confirmed; 'input' covers desktop typing.
@@ -420,6 +447,94 @@ function restoreState(){
       setVal(`[data-i="${i}"][data-f="leaveHrs"]`, d.leaveHrs);
     });
   }
+}
+
+/* =====================================================================
+   BACKUP — export/import all entries + settings as a JSON file.
+   The app has no server, so this file is the ONLY way to get data
+   off this device. Import always confirms before overwriting.
+   ===================================================================== */
+function todayStamp(){
+  const d=new Date();
+  return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");
+}
+function currentBackupData(){
+  const settingsVals={};
+  SETTING_IDS.forEach(id=>{ settingsVals[id]=document.getElementById(id).value; });
+  return {periodId:PERIOD_ID, settings:settingsVals, days:state};
+}
+function downloadState(data, filename){
+  const payload = { app:"payCalcV1", version:1, exportedAt:new Date().toISOString(), data };
+  const blob = new Blob([JSON.stringify(payload, null, 2)], {type:"application/json"});
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement("a");
+  a.href = url; a.download = filename;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+function exportData(){
+  downloadState(currentBackupData(), "pay-calc-backup-"+todayStamp()+".json");
+  document.getElementById('backupNote').textContent = "✅ Backup downloaded.";
+  renderBackup();
+}
+function importData(input){
+  const file = input.files && input.files[0];
+  const note = document.getElementById('backupNote');
+  if(!file) return;
+  const done = msg => { note.textContent = msg; input.value = ""; };
+
+  const reader = new FileReader();
+  reader.onerror = () => done("❌ Couldn't read that file.");
+  reader.onload  = () => {
+    let incoming;
+    try {
+      const parsed = JSON.parse(reader.result);
+      incoming = (parsed && parsed.data) ? parsed.data : parsed;
+    } catch(e){
+      return done("❌ That isn't a valid backup — the file isn't readable JSON.");
+    }
+    if(!incoming || typeof incoming !== "object" || !Array.isArray(incoming.days)){
+      return done("❌ That doesn't look like a Pay Calculator backup.");
+    }
+
+    const ok = confirm(
+      "Restore this backup?\n\n" +
+      `It contains entries for ${incoming.days.length} days plus your rate settings.\n\n` +
+      "This REPLACES everything currently entered. Your current data will be downloaded as a safety copy first."
+    );
+    if(!ok) return done("Restore cancelled — nothing changed.");
+
+    downloadState(currentBackupData(), "pay-calc-BEFORE-restore-"+todayStamp()+".json");
+
+    if(incoming.settings){
+      SETTING_IDS.forEach(id=>{
+        if(id in incoming.settings){ const el=document.getElementById(id); if(el) el.value = incoming.settings[id]; }
+      });
+    }
+    incoming.days.forEach((d,i)=>{
+      if(!state[i] || !d) return;
+      Object.assign(state[i], d);
+      const setVal=(sel,val)=>{ const el=document.querySelector(sel); if(el && val!==undefined) el.value=val; };
+      setVal(`#type${i}`, d.type);
+      setVal(`#ot${i}`, d.otMode);
+      setVal(`#start${i}`, d.start);
+      setVal(`#finish${i}`, d.finish);
+      setVal(`[data-i="${i}"][data-f="breakMin"]`, d.breakMin);
+      setVal(`[data-i="${i}"][data-f="leaveHrs"]`, d.leaveHrs);
+    });
+    saveState();
+    refresh();
+    done("✅ Backup restored. A safety copy of your previous data was downloaded.");
+  };
+  reader.readAsText(file);
+}
+function renderBackup(){
+  const bytes = new Blob([JSON.stringify(currentBackupData())]).size;
+  const enteredDays = state.filter(d => d.type!=="ordinary" || d.start).length;
+  document.getElementById('backupStats').innerHTML = [
+    ["Days with entries", enteredDays],
+    ["Backup size", (bytes/1024).toFixed(1)+" KB"]
+  ].map(([label,v]) => `<div class="stat"><div class="n">${v}</div><div class="l">${label}</div></div>`).join("");
 }
 
 buildDays();
