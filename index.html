@@ -568,10 +568,6 @@ function clearAll(){
    The app has no server, so this file is the ONLY way to get data
    off this device. Import always confirms before overwriting.
    ===================================================================== */
-function todayStamp(){
-  const d=new Date();
-  return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");
-}
 function currentBackupData(){
   const settingsVals={};
   SETTING_IDS.forEach(id=>{ settingsVals[id]=document.getElementById(id).value; });
@@ -587,7 +583,7 @@ function downloadState(data, filename){
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 function exportData(){
-  downloadState(currentBackupData(), "pay-calc-backup-"+todayStamp()+".json");
+  downloadState(currentBackupData(), "paycalc-"+PERIOD_ID+".json");
   document.getElementById('backupNote').textContent = "✅ Backup downloaded.";
   renderBackup();
 }
@@ -618,7 +614,7 @@ function importData(input){
     );
     if(!ok) return done("Restore cancelled — nothing changed.");
 
-    downloadState(currentBackupData(), "pay-calc-BEFORE-restore-"+todayStamp()+".json");
+    downloadState(currentBackupData(), "paycalc-"+PERIOD_ID+"-before-restore.json");
 
     if(incoming.settings){
       SETTING_IDS.forEach(id=>{
