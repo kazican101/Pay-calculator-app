@@ -34,7 +34,8 @@
   .day-head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 9px; gap: 8px; }
   .day-name { font-weight: 600; font-size: 0.95rem; }
   .day-date { color: var(--muted); font-size: 0.8rem; }
-  .day-pay { font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .day-pay { font-weight: 400; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .day-pay.bold-ot, select.bold-ot { font-weight: 700; }
   .row { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1fr); gap: 8px; margin-bottom: 8px; }
   .row3 { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1fr) 72px; gap: 8px; margin-bottom: 8px; }
   .field { min-width: 0; }
@@ -76,6 +77,11 @@
     body { padding: 10px; }
   }
   .week-label { font-size: 0.74rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); font-weight: 700; margin: 16px 0 8px; }
+  .fortnight-nav { display: flex; align-items: center; justify-content: center; gap: 12px; margin: -6px 0 16px; }
+  .fortnight-nav button { padding: 6px 14px; font-size: 16px; line-height: 1; }
+  .fortnight-range { font-weight: 700; font-size: 0.9rem; min-width: 170px; text-align: center; }
+  .clear-all-row { text-align: right; margin: -8px 0 18px; }
+  .clear-all-row button { font-size: 0.8rem; padding: 7px 12px; color: var(--amber); border-color: #e9cfa6; }
   .disclaimer { font-size: 0.75rem; color: var(--muted); margin-top: 16px; padding: 12px 14px; background: #fff; border: 1px solid var(--line); border-radius: 10px; }
   .disclaimer strong { color: var(--amber); }
 </style>
@@ -85,12 +91,21 @@
 <h1>Fortnight Pay Calculator</h1>
 <div class="sub">Gaming Technicians · The Star Gold Coast EBA 2026 · logic verified against clauses 6.7, 6.10, 6.11, 7.1</div>
 
+<div class="fortnight-nav">
+  <button type="button" id="prevFortnight" aria-label="Previous fortnight">&#8249;</button>
+  <div class="fortnight-range" id="fortnightRange"></div>
+  <button type="button" id="nextFortnight" aria-label="Next fortnight">&#8250;</button>
+</div>
+
 <div class="totals">
   <div class="tcard"><div class="lab">Paid ordinary hrs</div><div class="val" id="totOrd">0.0</div></div>
   <div class="tcard"><div class="lab">Overtime hrs</div><div class="val" id="totOT">0.0</div></div>
   <div class="tcard"><div class="lab">Gross pay</div><div class="val" id="totGross">$0</div></div>
   <div class="tcard"><div class="lab">Est. tax</div><div class="val" id="totTax">$0</div></div>
   <div class="tcard big"><div class="lab">Estimated take-home</div><div class="val" id="totNet">$0</div></div>
+</div>
+<div class="clear-all-row">
+  <button type="button" id="clearAllBtn">Clear all entries</button>
 </div>
 
 <details class="settings">
@@ -175,9 +190,9 @@
 
 <script>
 // Reference: a known fortnight START (Monday). Set once, never change.
-const FORTNIGHT_REFERENCE = new Date(2026, 5, 29); // 29 Jun 2026 (month 0-indexed: 5 = June)
+const FORTNIGHT_REFERENCE = new Date(2026, 6, 13); // 13 Jul 2026 (month 0-indexed: 6 = July)
 
-// Work out the current fortnight's start date from today.
+// Work out the fortnight start date containing today.
 function getCurrentFortnightStart() {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
@@ -198,14 +213,32 @@ function formatWeekRange(d0, d1){
   if(d0.getMonth() === d1.getMonth()) return d0.getDate()+"–"+d1.getDate()+" "+MONTH_NAMES[d1.getMonth()];
   return fmtShortDate(d0)+"–"+fmtShortDate(d1);
 }
+function fmtFortnightRange(start){
+  const end=new Date(start); end.setDate(end.getDate()+13);
+  return formatWeekRange(start,end)+" "+end.getFullYear();
+}
 function isoDate(d){ return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0"); }
 
-const FORTNIGHT_START = getCurrentFortnightStart();
-const DAYS = Array.from({length:14}, (_, i) => {
-  const d = new Date(FORTNIGHT_START);
-  d.setDate(d.getDate() + i);
-  return { name: DAY_NAMES[d.getDay()], date: fmtShortDate(d), dow: d.getDay() };
-});
+function computeDays(start){
+  return Array.from({length:14}, (_, i) => {
+    const d = new Date(start);
+    d.setDate(d.getDate() + i);
+    return { name: DAY_NAMES[d.getDay()], date: fmtShortDate(d), dow: d.getDay() };
+  });
+}
+
+// PERIOD_OFFSET counts fortnights away from the one containing today (0 = current, +1 = next, -1 = previous).
+const TODAY_FORTNIGHT_START = getCurrentFortnightStart();
+let PERIOD_OFFSET = 0;
+function fortnightStartForOffset(offset){
+  const d = new Date(TODAY_FORTNIGHT_START);
+  d.setDate(d.getDate() + offset*14);
+  return d;
+}
+
+let FORTNIGHT_START = fortnightStartForOffset(PERIOD_OFFSET);
+let DAYS = computeDays(FORTNIGHT_START);
+let PERIOD_ID = isoDate(FORTNIGHT_START);
 // Gaming Technician Classifications, Attachments H-K (permanent ordinary hourly rate)
 // Table levels 1-5 for each wage year.
 const GT_RATES = {
@@ -227,7 +260,8 @@ function roleRate(roleId, year){
   const r = ROLES.find(x=>x.id===roleId);
   return r ? GT_RATES[year][r.lvl] : GT_RATES[year][4];
 }
-const state = DAYS.map(() => ({start:"", finish:"", otMode:"none", type:"ordinary", breakMin:30, leaveHrs:7.6}));
+function defaultDay(){ return {start:"", finish:"", otMode:"none", type:"ordinary", breakMin:30, leaveHrs:7.6}; }
+let state = DAYS.map(defaultDay);
 
 function num(id){ return parseFloat(document.getElementById(id).value) || 0; }
 function settings(){
@@ -343,20 +377,20 @@ function buildDays(){
   DAYS.forEach((meta,i)=>{
     if(i===0){
       const w1e=new Date(FORTNIGHT_START); w1e.setDate(w1e.getDate()+6);
-      const w=document.createElement('div'); w.className="week-label";
+      const w=document.createElement('div'); w.className="week-label"; w.id="weeklabel1";
       w.textContent="Week 1  ·  "+formatWeekRange(FORTNIGHT_START, w1e); wrap.appendChild(w);
     }
     if(i===7){
       const w2s=new Date(FORTNIGHT_START); w2s.setDate(w2s.getDate()+7);
       const w2e=new Date(FORTNIGHT_START); w2e.setDate(w2e.getDate()+13);
-      const w=document.createElement('div'); w.className="week-label";
+      const w=document.createElement('div'); w.className="week-label"; w.id="weeklabel2";
       w.textContent="Week 2  ·  "+formatWeekRange(w2s, w2e); wrap.appendChild(w);
     }
     const el=document.createElement('div');
     el.className="day"; el.id="day"+i;
     el.innerHTML=`
       <div class="day-head">
-        <div><span class="day-name">${meta.name}</span> <span class="day-date">${meta.date}</span></div>
+        <div><span class="day-name" id="dayname${i}">${meta.name}</span> <span class="day-date" id="daydate${i}">${meta.date}</span></div>
         <div class="day-pay" id="pay${i}">$0.00</div>
       </div>
       <div class="row">
@@ -406,6 +440,9 @@ function refresh(){
     document.getElementById('times'+i).style.display=(d.type==="ordinary"||d.type==="ph")?"":"none";
     document.getElementById('leaverow'+i).style.display=isLeave?"":"none";
     document.getElementById('ot'+i).disabled=(isRest||isLeave||d.type==="ph");
+    const isOT=d.otMode==="ot"||d.otMode==="otRdo";
+    document.getElementById('ot'+i).classList.toggle('bold-ot', isOT);
+    document.getElementById('pay'+i).classList.toggle('bold-ot', isOT);
   });
   const s=settings(), tax=gross*s.tax;
   document.getElementById('totOrd').textContent=ordH.toFixed(1);
@@ -424,54 +461,106 @@ function handle(e){
     if(f==="breakMin"||f==="leaveHrs") state[i][f]=parseFloat(t.value)||0;
     else state[i][f]=t.value;
     refresh();
+    saveDays();
   } else if(t.id==="s_year" || t.id==="s_class"){
     const yr = document.getElementById('s_year').value;
     const cls = document.getElementById('s_class').value;
     document.getElementById('s_rate').value = roleRate(cls, yr).toFixed(2);
     refresh();
+    saveSettings();
   } else if(t.id && t.id.startsWith('s_')){
     refresh();
+    saveSettings();
   }
-  saveState();
 }
 document.addEventListener('change', handle);
 document.addEventListener('input', handle);
 
-// Ties saved day entries to this specific fortnight — bump when DAYS' dates change for a new period.
-const STORAGE_KEY = 'payCalcV1';
-const PERIOD_ID = isoDate(FORTNIGHT_START); // auto-derived, rolls forward every fortnight
+// Settings are global (one copy, shared across every fortnight).
+// Day entries are stored per-fortnight, keyed by that fortnight's start date, so a new
+// fortnight never overwrites a previous one.
+const SETTINGS_KEY = 'payCalcSettingsV1';
 const SETTING_IDS = ['s_class','s_year','s_rate','s_mWeekday','s_mSat','s_mSun','s_mPH','s_pMorning','s_pAfternoon','s_pFriNight','s_ot1','s_ot2','s_otWknd','s_alLoad','s_tax'];
+function fortnightKey(periodId){ return 'paycalc:'+periodId; }
 
-function saveState(){
+function saveSettings(){
   const settingsVals={};
   SETTING_IDS.forEach(id=>{ settingsVals[id]=document.getElementById(id).value; });
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({periodId:PERIOD_ID, settings:settingsVals, days:state}));
-  } catch(e){}
+  try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(settingsVals)); } catch(e){}
+}
+function restoreSettings(){
+  let vals;
+  try { vals=JSON.parse(localStorage.getItem(SETTINGS_KEY)); } catch(e){ vals=null; }
+  if(!vals) return;
+  SETTING_IDS.forEach(id=>{
+    if(id in vals){ const el=document.getElementById(id); if(el) el.value=vals[id]; }
+  });
 }
 
-function restoreState(){
+function saveDays(){
+  try { localStorage.setItem(fortnightKey(PERIOD_ID), JSON.stringify(state)); } catch(e){}
+}
+function loadDaysForPeriod(periodId){
   let data;
-  try { data=JSON.parse(localStorage.getItem(STORAGE_KEY)); } catch(e){ data=null; }
-  if(!data) return;
-  if(data.settings){
-    SETTING_IDS.forEach(id=>{
-      if(id in data.settings){ const el=document.getElementById(id); if(el) el.value=data.settings[id]; }
-    });
-  }
-  if(data.periodId===PERIOD_ID && Array.isArray(data.days)){
-    data.days.forEach((d,i)=>{
-      if(!state[i] || !d) return;
-      Object.assign(state[i], d);
-      const setVal=(sel,val)=>{ const el=document.querySelector(sel); if(el && val!==undefined) el.value=val; };
-      setVal(`#type${i}`, d.type);
-      setVal(`#ot${i}`, d.otMode);
-      setVal(`#start${i}`, d.start);
-      setVal(`#finish${i}`, d.finish);
-      setVal(`[data-i="${i}"][data-f="breakMin"]`, d.breakMin);
-      setVal(`[data-i="${i}"][data-f="leaveHrs"]`, d.leaveHrs);
-    });
-  }
+  try { data=JSON.parse(localStorage.getItem(fortnightKey(periodId))); } catch(e){ data=null; }
+  return Array.isArray(data) ? data : null;
+}
+
+// Push the in-memory `state` values into the existing form elements (never rebuilds them).
+function applyStateToDOM(){
+  state.forEach((d,i)=>{
+    const setVal=(sel,val)=>{ const el=document.querySelector(sel); if(el && val!==undefined) el.value=val; };
+    setVal(`#type${i}`, d.type);
+    setVal(`#ot${i}`, d.otMode);
+    setVal(`#start${i}`, d.start);
+    setVal(`#finish${i}`, d.finish);
+    setVal(`[data-i="${i}"][data-f="breakMin"]`, d.breakMin);
+    setVal(`[data-i="${i}"][data-f="leaveHrs"]`, d.leaveHrs);
+  });
+}
+
+function loadDaysIntoState(){
+  const saved = loadDaysForPeriod(PERIOD_ID);
+  state = DAYS.map((_,i)=>{
+    const base = defaultDay();
+    if(saved && saved[i]) Object.assign(base, saved[i]);
+    return base;
+  });
+  applyStateToDOM();
+}
+
+// Updates the fortnight heading, per-day names/dates, and week labels — text/content only.
+function renderFortnightUI(){
+  document.getElementById('fortnightRange').textContent = fmtFortnightRange(FORTNIGHT_START);
+  DAYS.forEach((meta,i)=>{
+    const nameEl=document.getElementById('dayname'+i), dateEl=document.getElementById('daydate'+i);
+    if(nameEl) nameEl.textContent=meta.name;
+    if(dateEl) dateEl.textContent=meta.date;
+  });
+  const w1e=new Date(FORTNIGHT_START); w1e.setDate(w1e.getDate()+6);
+  const w2s=new Date(FORTNIGHT_START); w2s.setDate(w2s.getDate()+7);
+  const w2e=new Date(FORTNIGHT_START); w2e.setDate(w2e.getDate()+13);
+  document.getElementById('weeklabel1').textContent="Week 1  ·  "+formatWeekRange(FORTNIGHT_START, w1e);
+  document.getElementById('weeklabel2').textContent="Week 2  ·  "+formatWeekRange(w2s, w2e);
+}
+
+function goToFortnight(offset){
+  PERIOD_OFFSET = offset;
+  FORTNIGHT_START = fortnightStartForOffset(PERIOD_OFFSET);
+  DAYS = computeDays(FORTNIGHT_START);
+  PERIOD_ID = isoDate(FORTNIGHT_START);
+  renderFortnightUI();
+  loadDaysIntoState();
+  refresh();
+}
+
+function clearAll(){
+  const ok = confirm("Clear all entries for this fortnight?\n\nThis resets every day's times, day type and shift basis. Your rate settings are not affected.");
+  if(!ok) return;
+  state = DAYS.map(defaultDay);
+  applyStateToDOM();
+  saveDays();
+  refresh();
 }
 
 /* =====================================================================
@@ -539,15 +628,10 @@ function importData(input){
     incoming.days.forEach((d,i)=>{
       if(!state[i] || !d) return;
       Object.assign(state[i], d);
-      const setVal=(sel,val)=>{ const el=document.querySelector(sel); if(el && val!==undefined) el.value=val; };
-      setVal(`#type${i}`, d.type);
-      setVal(`#ot${i}`, d.otMode);
-      setVal(`#start${i}`, d.start);
-      setVal(`#finish${i}`, d.finish);
-      setVal(`[data-i="${i}"][data-f="breakMin"]`, d.breakMin);
-      setVal(`[data-i="${i}"][data-f="leaveHrs"]`, d.leaveHrs);
     });
-    saveState();
+    applyStateToDOM();
+    saveSettings();
+    saveDays();
     refresh();
     done("✅ Backup restored. A safety copy of your previous data was downloaded.");
   };
@@ -563,8 +647,14 @@ function renderBackup(){
 }
 
 buildDays();
-restoreState();
+restoreSettings();
+loadDaysIntoState();
+renderFortnightUI();
 refresh();
+
+document.getElementById('prevFortnight').addEventListener('click', () => goToFortnight(PERIOD_OFFSET-1));
+document.getElementById('nextFortnight').addEventListener('click', () => goToFortnight(PERIOD_OFFSET+1));
+document.getElementById('clearAllBtn').addEventListener('click', clearAll);
 
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('sw.js');
