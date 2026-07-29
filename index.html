@@ -99,6 +99,7 @@
   </div>
   <div class="tcard"><div class="lab">Balance (weeks)</div><div class="val" id="leaveTotalWeeks">0.00 wks</div></div>
   <div class="tcard big"><div class="lab">Current leave balance</div><div class="val" id="leaveTotalHrs">0.0 hrs</div></div>
+  <div class="field full" style="grid-column:1/-1;"><p class="set-note plain">Update the starting balance whenever you check your real balance on a payslip — ordinary hours from that fortnight onward accrue on top of it. Earlier fortnights already logged here aren't re-added.</p></div>
 </div>
 
 <div class="fortnight-nav">
@@ -508,6 +509,10 @@ document.addEventListener('input', handle);
 const SETTINGS_KEY = 'payCalcSettingsV1';
 const SETTING_IDS = ['s_class','s_year','s_rate','s_mWeekday','s_mSat','s_mSun','s_mPH','s_pMorning','s_pAfternoon','s_pFriNight','s_ot1','s_ot2','s_otWknd','s_alLoad','s_tax'];
 const LEAVE_BALANCE_KEY = 'payCalcLeaveBalanceV1';
+// The fortnight the starting balance was last entered/confirmed as of. Only fortnights
+// from this point onward accrue on top of it — earlier fortnights are assumed to already
+// be reflected in that manually-entered figure, so they're not counted a second time.
+const LEAVE_BALANCE_AS_OF_KEY = 'payCalcLeaveBalanceAsOfPeriodV1';
 function fortnightKey(periodId){ return 'paycalc:'+periodId; }
 
 function saveSettings(){
@@ -525,12 +530,27 @@ function restoreSettings(){
 }
 
 function saveLeaveBalance(){
-  try { localStorage.setItem(LEAVE_BALANCE_KEY, document.getElementById('leaveStartBalance').value); } catch(e){}
+  try {
+    localStorage.setItem(LEAVE_BALANCE_KEY, document.getElementById('leaveStartBalance').value);
+    localStorage.setItem(LEAVE_BALANCE_AS_OF_KEY, PERIOD_ID);
+  } catch(e){}
 }
 function restoreLeaveBalance(){
   let v;
   try { v = localStorage.getItem(LEAVE_BALANCE_KEY); } catch(e){ v = null; }
   if(v !== null){ const el=document.getElementById('leaveStartBalance'); if(el) el.value = v; }
+}
+function leaveBalanceAsOfPeriodId(){
+  let asOf;
+  try { asOf = localStorage.getItem(LEAVE_BALANCE_AS_OF_KEY); } catch(e){ asOf = null; }
+  if(!asOf){
+    // No anchor saved yet (first run after this feature was added). Anchor to today's
+    // fortnight so fortnights already logged in the past aren't re-added on top of the
+    // balance figure that presumably already accounts for them.
+    asOf = PERIOD_ID;
+    try { localStorage.setItem(LEAVE_BALANCE_AS_OF_KEY, asOf); } catch(e){}
+  }
+  return asOf;
 }
 
 function saveDays(){
@@ -542,14 +562,16 @@ function loadDaysForPeriod(periodId){
   return Array.isArray(data) ? data : null;
 }
 
-// Sums ordinary hours (excludes overtime) across every OTHER saved fortnight, for the
-// leave accrual running total. Reuses calcDay() itself — the same function driving the
+// Sums ordinary hours (excludes overtime) across every OTHER saved fortnight from
+// sincePeriodId onward, for the leave accrual running total. Fortnights before
+// sincePeriodId are skipped — they're assumed to already be reflected in the manually
+// entered starting balance. Reuses calcDay() itself — the same function driving the
 // on-screen pay totals — by briefly pointing the `state`/`DAYS` globals it reads at each
 // saved fortnight's data, then restoring them. Safe because JS runs this to completion
 // before anything else can observe the swap. calcDay's ordH/otH never depend on rate or
 // penalty settings (only on shift times/type), so using today's settings here is correct
 // no matter which settings were active when that fortnight was actually worked.
-function ordinaryHoursInOtherSavedPeriods(excludePeriodId){
+function ordinaryHoursInOtherSavedPeriods(excludePeriodId, sincePeriodId){
   let ordHoursTotal = 0;
   const savedState = state, savedDays = DAYS;
   try {
@@ -558,6 +580,7 @@ function ordinaryHoursInOtherSavedPeriods(excludePeriodId){
       if(!key || key.indexOf('paycalc:') !== 0) continue;
       const periodId = key.slice('paycalc:'.length);
       if(periodId === excludePeriodId) continue;
+      if(periodId < sincePeriodId) continue;
       const saved = loadDaysForPeriod(periodId);
       if(!saved) continue;
 
@@ -579,7 +602,10 @@ function ordinaryHoursInOtherSavedPeriods(excludePeriodId){
 // not-yet-saved edits are reflected immediately instead of lagging by one keystroke.
 function refreshLeaveTracker(currentPeriodOrdH){
   const startBalance = parseFloat(document.getElementById('leaveStartBalance').value) || 0;
-  const ordHoursAllTime = currentPeriodOrdH + ordinaryHoursInOtherSavedPeriods(PERIOD_ID);
+  const asOfPeriodId = leaveBalanceAsOfPeriodId();
+  const currentPeriodCounts = PERIOD_ID >= asOfPeriodId;
+  const ordHoursAllTime = (currentPeriodCounts ? currentPeriodOrdH : 0)
+    + ordinaryHoursInOtherSavedPeriods(PERIOD_ID, asOfPeriodId);
   const accruedHrs = ordHoursAllTime * LEAVE_ACCRUAL_RATE_PER_ORDINARY_HOUR;
   const totalHrs = startBalance + accruedHrs;
   document.getElementById('leaveTotalHrs').textContent = totalHrs.toFixed(1)+" hrs";
