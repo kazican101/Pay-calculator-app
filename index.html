@@ -99,7 +99,7 @@
   </div>
   <div class="tcard"><div class="lab">Balance (weeks)</div><div class="val" id="leaveTotalWeeks">0.00 wks</div></div>
   <div class="tcard big"><div class="lab">Current leave balance</div><div class="val" id="leaveTotalHrs">0.0 hrs</div></div>
-  <div class="field full" style="grid-column:1/-1;"><p class="set-note plain">Update the starting balance whenever you check your real balance on a payslip — ordinary hours from that fortnight onward accrue on top of it. Earlier fortnights already logged here aren't re-added.</p></div>
+  <div class="field full" style="grid-column:1/-1;"><p class="set-note plain">Update the starting balance whenever you check your real balance on a payslip — ordinary hours from that fortnight onward accrue on top of it, and any days marked "Annual leave" are subtracted. Earlier fortnights already logged here aren't re-added.</p></div>
 </div>
 
 <div class="fortnight-nav">
@@ -457,10 +457,11 @@ function buildDays(){
 
 // ---- Update only text/visibility. Inputs are untouched. ----
 function refresh(){
-  let ordH=0, otH=0, gross=0;
+  let ordH=0, otH=0, gross=0, leaveTakenH=0;
   DAYS.forEach((meta,i)=>{
     const d=state[i], r=calcDay(i);
     ordH+=r.ordH; otH+=r.otH; gross+=r.pay;
+    if(d.type==="annual") leaveTakenH+=d.leaveHrs;
     document.getElementById('pay'+i).textContent=fmt(r.pay);
     const tagHtml=(r.tags||[]).map(x=>`<span class="tag ${x.c}">${x.t}</span>`).join("");
     document.getElementById('note'+i).innerHTML=tagHtml+(r.label?`<span>${r.label}</span>`:"");
@@ -482,7 +483,7 @@ function refresh(){
   document.getElementById('totSuper').textContent=fmt(superSacrifice);
   document.getElementById('totTax').textContent=fmt(tax);
   document.getElementById('totNet').textContent=fmt(taxableGross-tax);
-  refreshLeaveTracker(ordH);
+  refreshLeaveTracker(ordH, leaveTakenH);
   renderBackup();
 }
 
@@ -571,17 +572,17 @@ function loadDaysForPeriod(periodId){
   return Array.isArray(data) ? data : null;
 }
 
-// Sums ordinary hours (excludes overtime) across every OTHER saved fortnight from
-// sincePeriodId onward, for the leave accrual running total. Fortnights before
-// sincePeriodId are skipped — they're assumed to already be reflected in the manually
-// entered starting balance. Reuses calcDay() itself — the same function driving the
-// on-screen pay totals — by briefly pointing the `state`/`DAYS` globals it reads at each
-// saved fortnight's data, then restoring them. Safe because JS runs this to completion
-// before anything else can observe the swap. calcDay's ordH/otH never depend on rate or
-// penalty settings (only on shift times/type), so using today's settings here is correct
-// no matter which settings were active when that fortnight was actually worked.
-function ordinaryHoursInOtherSavedPeriods(excludePeriodId, sincePeriodId){
-  let ordHoursTotal = 0;
+// Sums ordinary hours (for accrual) and annual-leave-taken hours (to subtract from the
+// balance) across every OTHER saved fortnight from sincePeriodId onward. Fortnights
+// before sincePeriodId are skipped — they're assumed to already be reflected in the
+// manually entered starting balance. Reuses calcDay() itself — the same function driving
+// the on-screen pay totals — by briefly pointing the `state`/`DAYS` globals it reads at
+// each saved fortnight's data, then restoring them. Safe because JS runs this to
+// completion before anything else can observe the swap. calcDay's ordH/otH never depend
+// on rate or penalty settings (only on shift times/type), so using today's settings here
+// is correct no matter which settings were active when that fortnight was actually worked.
+function leaveAccountingForOtherSavedPeriods(excludePeriodId, sincePeriodId){
+  let ordHoursTotal = 0, leaveTakenHoursTotal = 0;
   const savedState = state, savedDays = DAYS;
   try {
     for(let i=0; i<localStorage.length; i++){
@@ -597,26 +598,30 @@ function ordinaryHoursInOtherSavedPeriods(excludePeriodId, sincePeriodId){
       DAYS = computeDays(new Date(y, m-1, d));
       state = DAYS.map((_, idx) => Object.assign(defaultDay(), saved[idx]));
 
-      for(let idx=0; idx<DAYS.length; idx++) ordHoursTotal += calcDay(idx).ordH;
+      for(let idx=0; idx<DAYS.length; idx++){
+        ordHoursTotal += calcDay(idx).ordH;
+        if(state[idx].type==="annual") leaveTakenHoursTotal += state[idx].leaveHrs;
+      }
     }
   } finally {
     state = savedState;
     DAYS = savedDays;
   }
-  return ordHoursTotal;
+  return {ordHoursTotal, leaveTakenHoursTotal};
 }
 
 // currentPeriodOrdH is passed in from refresh() — it's the same ordH already computed
 // there for the "Paid ordinary hrs" card, so the currently viewed fortnight's live,
 // not-yet-saved edits are reflected immediately instead of lagging by one keystroke.
-function refreshLeaveTracker(currentPeriodOrdH){
+function refreshLeaveTracker(currentPeriodOrdH, currentPeriodLeaveTakenH){
   const startBalance = parseFloat(document.getElementById('leaveStartBalance').value) || 0;
   const asOfPeriodId = leaveBalanceAsOfPeriodId();
   const currentPeriodCounts = PERIOD_ID >= asOfPeriodId;
-  const ordHoursAllTime = (currentPeriodCounts ? currentPeriodOrdH : 0)
-    + ordinaryHoursInOtherSavedPeriods(PERIOD_ID, asOfPeriodId);
+  const other = leaveAccountingForOtherSavedPeriods(PERIOD_ID, asOfPeriodId);
+  const ordHoursAllTime = (currentPeriodCounts ? currentPeriodOrdH : 0) + other.ordHoursTotal;
+  const leaveTakenAllTime = (currentPeriodCounts ? currentPeriodLeaveTakenH : 0) + other.leaveTakenHoursTotal;
   const accruedHrs = ordHoursAllTime * LEAVE_ACCRUAL_RATE_PER_ORDINARY_HOUR;
-  const totalHrs = startBalance + accruedHrs;
+  const totalHrs = startBalance + accruedHrs - leaveTakenAllTime;
   document.getElementById('leaveTotalHrs').textContent = totalHrs.toFixed(1)+" hrs";
   document.getElementById('leaveTotalWeeks').textContent = (totalHrs/ORDINARY_HOURS_PER_WEEK).toFixed(2)+" wks";
 }
