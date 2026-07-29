@@ -113,6 +113,7 @@
   <div class="tcard"><div class="lab">Overtime hrs</div><div class="val" id="totOT">0.0</div></div>
   <div class="tcard"><div class="lab">Gross pay</div><div class="val" id="totGross">$0</div></div>
   <div class="tcard"><div class="lab">Est. tax</div><div class="val" id="totTax">$0</div></div>
+  <div class="tcard" style="grid-column:1/-1;"><div class="lab">Pre-tax super</div><div class="val" id="totSuper">$0</div></div>
   <div class="tcard big"><div class="lab">Estimated take-home</div><div class="val" id="totNet">$0</div></div>
 </div>
 <div class="clear-all-row">
@@ -163,6 +164,10 @@
 
     <div class="set-h">Leave — clause 7.1(d)</div>
     <div class="field full"><label>Annual leave loading %</label><input type="number" id="s_alLoad" value="20"></div>
+
+    <div class="set-h">Superannuation</div>
+    <div class="field full"><label>Pre-tax (salary sacrifice) super $ per fortnight</label><input type="number" id="s_superSacrifice" value="0" step="0.01" min="0"></div>
+    <div class="set-note plain">Deducted from gross before tax is calculated, and from take-home pay (it goes to your super fund, not your bank account).</div>
 
     <div class="set-h">Tax estimate</div>
     <div class="field full"><label>Effective tax rate on this fortnight (%)</label><input type="number" id="s_tax" value="30" step="0.1"></div>
@@ -294,6 +299,7 @@ function settings(){
     pen: {morning:num('s_pMorning'), afternoon:num('s_pAfternoon'), friNight:num('s_pFriNight')},
     ot: {t1:num('s_ot1')/100, t2:num('s_ot2')/100, wknd:num('s_otWknd')/100},
     alLoad: num('s_alLoad')/100,
+    superSacrifice: num('s_superSacrifice'),
     tax: num('s_tax')/100,
   };
 }
@@ -467,12 +473,15 @@ function refresh(){
     document.getElementById('ot'+i).classList.toggle('bold-ot', isOT);
     document.getElementById('pay'+i).classList.toggle('bold-ot', isOT);
   });
-  const s=settings(), tax=gross*s.tax;
+  const s=settings();
+  const superSacrifice=Math.min(s.superSacrifice, gross);
+  const taxableGross=gross-superSacrifice, tax=taxableGross*s.tax;
   document.getElementById('totOrd').textContent=ordH.toFixed(1);
   document.getElementById('totOT').textContent=otH.toFixed(1);
   document.getElementById('totGross').textContent=fmt(gross);
+  document.getElementById('totSuper').textContent=fmt(superSacrifice);
   document.getElementById('totTax').textContent=fmt(tax);
-  document.getElementById('totNet').textContent=fmt(gross-tax);
+  document.getElementById('totNet').textContent=fmt(taxableGross-tax);
   refreshLeaveTracker(ordH);
   renderBackup();
 }
@@ -507,7 +516,7 @@ document.addEventListener('input', handle);
 // Day entries are stored per-fortnight, keyed by that fortnight's start date, so a new
 // fortnight never overwrites a previous one.
 const SETTINGS_KEY = 'payCalcSettingsV1';
-const SETTING_IDS = ['s_class','s_year','s_rate','s_mWeekday','s_mSat','s_mSun','s_mPH','s_pMorning','s_pAfternoon','s_pFriNight','s_ot1','s_ot2','s_otWknd','s_alLoad','s_tax'];
+const SETTING_IDS = ['s_class','s_year','s_rate','s_mWeekday','s_mSat','s_mSun','s_mPH','s_pMorning','s_pAfternoon','s_pFriNight','s_ot1','s_ot2','s_otWknd','s_alLoad','s_superSacrifice','s_tax'];
 const LEAVE_BALANCE_KEY = 'payCalcLeaveBalanceV1';
 // The fortnight the starting balance was last entered/confirmed as of. Only fortnights
 // from this point onward accrue on top of it — earlier fortnights are assumed to already
