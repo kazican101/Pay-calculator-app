@@ -271,14 +271,12 @@ function roleRate(roleId, year){
   return r ? GT_RATES[year][r.lvl] : GT_RATES[year][4];
 }
 
-// Annual leave accrual — Star Gold Coast EBA clause 7.1.
-// This workplace's entitlement is 5 weeks/yr (not the Fair Work Act standard 4), so the
-// rate is derived from that: 5 wks x 38 hrs = 190 leave hrs/yr, against 52 wks x 38 hrs =
-// 1976 ordinary hrs/yr in a standard full-time year. 190 / 1976 = ~0.09615 leave hrs
-// accrued per ordinary hour worked.
-// ASSUMPTION (unverified — the EBA text isn't in this repo, only clause numbers are
-// referenced): only ORDINARY hours accrue leave, matching the Fair Work Act NES default.
-// Overtime hours are excluded. Confirm this against the actual clause 7.1 wording.
+// Annual leave accrual — Star Gold Coast EBA 2026, clause 7.1.
+// Clause 7.1(b): entitlement is 5 weeks/yr (not the Fair Work Act standard 4). Clause
+// 7.1(c): "Annual leave entitlements accrue progressively on a team member's ordinary
+// hours of work" — overtime (a separately defined concept, clause 6.11) is excluded.
+// Rate: 5 wks x 38 hrs = 190 leave hrs/yr, against 52 wks x 38 hrs = 1976 ordinary hrs/yr
+// in a standard full-time year. 190 / 1976 = ~0.09615 leave hrs accrued per ordinary hour.
 const ORDINARY_HOURS_PER_WEEK = 38;
 const LEAVE_ENTITLEMENT_WEEKS_PER_YEAR = 5;
 const LEAVE_ACCRUAL_RATE_PER_ORDINARY_HOUR =
