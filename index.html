@@ -91,6 +91,16 @@
 <h1>Fortnight Pay Calculator</h1>
 <div class="sub">Gaming Technicians · The Star Gold Coast EBA 2026 · logic verified against clauses 6.7, 6.10, 6.11, 7.1</div>
 
+<div class="week-label" style="margin-top:0">Annual leave — clause 7.1</div>
+<div class="totals">
+  <div class="tcard">
+    <div class="lab">Starting balance (hrs)</div>
+    <input type="number" id="leaveStartBalance" step="0.01" min="0" value="0" style="margin-top:4px;">
+  </div>
+  <div class="tcard"><div class="lab">Balance (weeks)</div><div class="val" id="leaveTotalWeeks">0.00 wks</div></div>
+  <div class="tcard big"><div class="lab">Current leave balance</div><div class="val" id="leaveTotalHrs">0.0 hrs</div></div>
+</div>
+
 <div class="fortnight-nav">
   <button type="button" id="prevFortnight" aria-label="Previous fortnight">&#8249;</button>
   <div class="fortnight-range" id="fortnightRange"></div>
@@ -260,6 +270,20 @@ function roleRate(roleId, year){
   const r = ROLES.find(x=>x.id===roleId);
   return r ? GT_RATES[year][r.lvl] : GT_RATES[year][4];
 }
+
+// Annual leave accrual — Star Gold Coast EBA clause 7.1.
+// This workplace's entitlement is 5 weeks/yr (not the Fair Work Act standard 4), so the
+// rate is derived from that: 5 wks x 38 hrs = 190 leave hrs/yr, against 52 wks x 38 hrs =
+// 1976 ordinary hrs/yr in a standard full-time year. 190 / 1976 = ~0.09615 leave hrs
+// accrued per ordinary hour worked.
+// ASSUMPTION (unverified — the EBA text isn't in this repo, only clause numbers are
+// referenced): only ORDINARY hours accrue leave, matching the Fair Work Act NES default.
+// Overtime hours are excluded. Confirm this against the actual clause 7.1 wording.
+const ORDINARY_HOURS_PER_WEEK = 38;
+const LEAVE_ENTITLEMENT_WEEKS_PER_YEAR = 5;
+const LEAVE_ACCRUAL_RATE_PER_ORDINARY_HOUR =
+  (LEAVE_ENTITLEMENT_WEEKS_PER_YEAR * ORDINARY_HOURS_PER_WEEK) / (52 * ORDINARY_HOURS_PER_WEEK);
+
 function defaultDay(){ return {start:"", finish:"", otMode:"none", type:"ordinary", breakMin:30, leaveHrs:7.6}; }
 let state = DAYS.map(defaultDay);
 
@@ -450,6 +474,7 @@ function refresh(){
   document.getElementById('totGross').textContent=fmt(gross);
   document.getElementById('totTax').textContent=fmt(tax);
   document.getElementById('totNet').textContent=fmt(gross-tax);
+  refreshLeaveTracker(ordH);
   renderBackup();
 }
 
@@ -471,6 +496,9 @@ function handle(e){
   } else if(t.id && t.id.startsWith('s_')){
     refresh();
     saveSettings();
+  } else if(t.id==="leaveStartBalance"){
+    refresh();
+    saveLeaveBalance();
   }
 }
 document.addEventListener('change', handle);
@@ -481,6 +509,7 @@ document.addEventListener('input', handle);
 // fortnight never overwrites a previous one.
 const SETTINGS_KEY = 'payCalcSettingsV1';
 const SETTING_IDS = ['s_class','s_year','s_rate','s_mWeekday','s_mSat','s_mSun','s_mPH','s_pMorning','s_pAfternoon','s_pFriNight','s_ot1','s_ot2','s_otWknd','s_alLoad','s_tax'];
+const LEAVE_BALANCE_KEY = 'payCalcLeaveBalanceV1';
 function fortnightKey(periodId){ return 'paycalc:'+periodId; }
 
 function saveSettings(){
@@ -497,6 +526,15 @@ function restoreSettings(){
   });
 }
 
+function saveLeaveBalance(){
+  try { localStorage.setItem(LEAVE_BALANCE_KEY, document.getElementById('leaveStartBalance').value); } catch(e){}
+}
+function restoreLeaveBalance(){
+  let v;
+  try { v = localStorage.getItem(LEAVE_BALANCE_KEY); } catch(e){ v = null; }
+  if(v !== null){ const el=document.getElementById('leaveStartBalance'); if(el) el.value = v; }
+}
+
 function saveDays(){
   try { localStorage.setItem(fortnightKey(PERIOD_ID), JSON.stringify(state)); } catch(e){}
 }
@@ -504,6 +542,50 @@ function loadDaysForPeriod(periodId){
   let data;
   try { data=JSON.parse(localStorage.getItem(fortnightKey(periodId))); } catch(e){ data=null; }
   return Array.isArray(data) ? data : null;
+}
+
+// Sums ordinary hours (excludes overtime) across every OTHER saved fortnight, for the
+// leave accrual running total. Reuses calcDay() itself — the same function driving the
+// on-screen pay totals — by briefly pointing the `state`/`DAYS` globals it reads at each
+// saved fortnight's data, then restoring them. Safe because JS runs this to completion
+// before anything else can observe the swap. calcDay's ordH/otH never depend on rate or
+// penalty settings (only on shift times/type), so using today's settings here is correct
+// no matter which settings were active when that fortnight was actually worked.
+function ordinaryHoursInOtherSavedPeriods(excludePeriodId){
+  let ordHoursTotal = 0;
+  const savedState = state, savedDays = DAYS;
+  try {
+    for(let i=0; i<localStorage.length; i++){
+      const key = localStorage.key(i);
+      if(!key || key.indexOf('paycalc:') !== 0) continue;
+      const periodId = key.slice('paycalc:'.length);
+      if(periodId === excludePeriodId) continue;
+      const saved = loadDaysForPeriod(periodId);
+      if(!saved) continue;
+
+      const [y, m, d] = periodId.split('-').map(Number);
+      DAYS = computeDays(new Date(y, m-1, d));
+      state = DAYS.map((_, idx) => Object.assign(defaultDay(), saved[idx]));
+
+      for(let idx=0; idx<DAYS.length; idx++) ordHoursTotal += calcDay(idx).ordH;
+    }
+  } finally {
+    state = savedState;
+    DAYS = savedDays;
+  }
+  return ordHoursTotal;
+}
+
+// currentPeriodOrdH is passed in from refresh() — it's the same ordH already computed
+// there for the "Paid ordinary hrs" card, so the currently viewed fortnight's live,
+// not-yet-saved edits are reflected immediately instead of lagging by one keystroke.
+function refreshLeaveTracker(currentPeriodOrdH){
+  const startBalance = parseFloat(document.getElementById('leaveStartBalance').value) || 0;
+  const ordHoursAllTime = currentPeriodOrdH + ordinaryHoursInOtherSavedPeriods(PERIOD_ID);
+  const accruedHrs = ordHoursAllTime * LEAVE_ACCRUAL_RATE_PER_ORDINARY_HOUR;
+  const totalHrs = startBalance + accruedHrs;
+  document.getElementById('leaveTotalHrs').textContent = totalHrs.toFixed(1)+" hrs";
+  document.getElementById('leaveTotalWeeks').textContent = (totalHrs/ORDINARY_HOURS_PER_WEEK).toFixed(2)+" wks";
 }
 
 // Push the in-memory `state` values into the existing form elements (never rebuilds them).
@@ -644,6 +726,7 @@ function renderBackup(){
 
 buildDays();
 restoreSettings();
+restoreLeaveBalance();
 loadDaysIntoState();
 renderFortnightUI();
 refresh();
