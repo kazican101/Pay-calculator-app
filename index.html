@@ -869,7 +869,13 @@ document.getElementById('nextFortnight').addEventListener('click', () => goToFor
 document.getElementById('clearAllBtn').addEventListener('click', clearAll);
 
 if ('serviceWorker' in navigator) {
-  navigator.serviceWorker.register('sw.js');
+  // Without this, a PWA that's just reopened from the home screen (rather than freshly
+  // navigated to) can keep running an old cached version indefinitely even after a new
+  // sw.js has installed and activated in the background — nothing tells the already-open
+  // page to reload. controllerchange fires once the new service worker takes over; reload
+  // then so the fresh cached assets actually get used.
+  navigator.serviceWorker.register('sw.js').then(reg => reg.update());
+  navigator.serviceWorker.addEventListener('controllerchange', () => window.location.reload());
 }
 </script>
 </body>
