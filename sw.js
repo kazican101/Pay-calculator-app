@@ -1,4 +1,4 @@
-const CACHE = 'pay-calc-v10';
+const CACHE = 'pay-calc-v11';
 const ASSETS = [
   './',
   './index.html',
