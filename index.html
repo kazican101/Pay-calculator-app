@@ -64,6 +64,7 @@
   .set-note.plain { border-top: none; padding-top: 0; }
   button { font-family: inherit; font-size: 14px; padding: 10px 14px; border-radius: 8px; border: 1px solid var(--line); background: #fff; color: var(--ink); cursor: pointer; }
   button.btn-primary { background: var(--green); color: #fff; border-color: var(--green); font-weight: 600; }
+  button.btn-small { font-size: 0.78rem; padding: 5px 10px; margin-bottom: 8px; }
   button:active { opacity: 0.85; }
   .stats { grid-column: 1/-1; display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 8px; }
   .stat { background: var(--paper); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; text-align: center; }
@@ -288,8 +289,11 @@ const LEAVE_ENTITLEMENT_WEEKS_PER_YEAR = 5;
 const LEAVE_ACCRUAL_RATE_PER_ORDINARY_HOUR =
   (LEAVE_ENTITLEMENT_WEEKS_PER_YEAR * ORDINARY_HOURS_PER_WEEK) / (52 * ORDINARY_HOURS_PER_WEEK);
 
-function defaultDay(){ return {start:"", finish:"", otMode:"none", type:"ordinary", breakMin:30, leaveHrs:7.6}; }
+function defaultDay(){ return {start:"", finish:"", otMode:"none", type:"ordinary", breakMin:30, leaveHrs:7.6, extraLeaveType:"annual", extraLeaveHrs:0}; }
 let state = DAYS.map(defaultDay);
+// Whether the "+ Add leave" section is expanded per day. UI-only (not persisted) —
+// re-derived from extraLeaveHrs whenever a fortnight's data is (re)loaded.
+let extraLeaveOpen = DAYS.map(()=>false);
 
 function num(id){ return parseFloat(document.getElementById(id).value) || 0; }
 function settings(){
@@ -319,6 +323,18 @@ function breakWindow(a,b,breakMin){
   return {s, e:s+breakMin};
 }
 
+// Extra leave hours added on top of a worked shift (Day type "Worked shift" only) —
+// e.g. worked the morning, took annual leave to cover the rest of the rostered shift.
+// Paid at the ordinary rate with no day multiplier and no shift penalty, same as a
+// full leave day: annual leave gets the clause 7.1(d) loading, personal/sick doesn't.
+function extraLeaveOnShift(d,s){
+  if(!d.extraLeaveHrs || d.extraLeaveHrs<=0) return null;
+  if(d.extraLeaveType==="personal"){
+    return {hrs:d.extraLeaveHrs, pay:s.rate*d.extraLeaveHrs, tag:{c:"pen", t:d.extraLeaveHrs+" hrs personal leave"}};
+  }
+  return {hrs:d.extraLeaveHrs, pay:s.rate*d.extraLeaveHrs*(1+s.alLoad), tag:{c:"pen", t:d.extraLeaveHrs+" hrs annual leave"}};
+}
+
 function calcDay(i){
   const d=state[i], meta=DAYS[i], s=settings();
 
@@ -332,7 +348,13 @@ function calcDay(i){
   }
 
   const t=shiftMinutes(d);
-  if(!t) return {ordH:0, otH:0, pay:0, tags: d.type==="ph"?[{c:"ph",t:"Public holiday"}]:[], label: d.type==="ph"?"Enter times":""};
+  if(!t){
+    if(d.type==="ordinary"){
+      const extra=extraLeaveOnShift(d,s);
+      if(extra) return {ordH:extra.hrs, otH:0, pay:extra.pay, tags:[extra.tag], label:""};
+    }
+    return {ordH:0, otH:0, pay:0, tags: d.type==="ph"?[{c:"ph",t:"Public holiday"}]:[], label: d.type==="ph"?"Enter times":""};
+  }
 
   const bw=breakWindow(t.a,t.b,d.breakMin);
   const isPH=d.type==="ph";
@@ -382,7 +404,12 @@ function calcDay(i){
     if(sawSun) tags.push({c:"sun",t:"Sun rate"});
     if(pen>0) tags.push({c:"pen",t:"penalty $"+pen.toFixed(2)});
   }
-  return {ordH:hrs, otH:0, pay, tags, label:hrs.toFixed(2)+" hrs paid"};
+  let ordH=hrs, label=hrs.toFixed(2)+" hrs paid";
+  if(!isPH){
+    const extra=extraLeaveOnShift(d,s);
+    if(extra){ ordH+=extra.hrs; pay+=extra.pay; tags.push(extra.tag); }
+  }
+  return {ordH, otH:0, pay, tags, label};
 }
 
 function fmt(n){ return "$"+n.toLocaleString('en-AU',{minimumFractionDigits:2,maximumFractionDigits:2}); }
@@ -449,6 +476,19 @@ function buildDays(){
         <div class="field"><label>Leave hours</label><input type="number" value="7.6" min="0" step="0.1" data-i="${i}" data-f="leaveHrs"></div>
         <div></div>
       </div>
+      <button type="button" class="btn-small" id="extraLeaveAddBtn${i}" style="display:none" onclick="toggleExtraLeave(${i}, true)">+ Add leave</button>
+      <div id="extraLeaveWrap${i}" style="display:none">
+        <div class="row">
+          <div class="field"><label>Leave type</label>
+            <select data-i="${i}" data-f="extraLeaveType" id="extraLeaveType${i}">
+              <option value="annual">Annual leave</option>
+              <option value="personal">Personal / sick</option>
+            </select>
+          </div>
+          <div class="field"><label>Leave hours</label><input type="number" value="0" min="0" step="0.1" data-i="${i}" data-f="extraLeaveHrs" id="extraLeaveHrs${i}"></div>
+        </div>
+        <button type="button" class="btn-small" onclick="toggleExtraLeave(${i}, false)">Remove leave</button>
+      </div>
       <div class="note" id="note${i}"></div>
     `;
     wrap.appendChild(el);
@@ -462,6 +502,7 @@ function refresh(){
     const d=state[i], r=calcDay(i);
     ordH+=r.ordH; otH+=r.otH; gross+=r.pay;
     if(d.type==="annual") leaveTakenH+=d.leaveHrs;
+    else if(d.type==="ordinary" && d.extraLeaveType==="annual" && d.extraLeaveHrs>0) leaveTakenH+=d.extraLeaveHrs;
     document.getElementById('pay'+i).textContent=fmt(r.pay);
     const tagHtml=(r.tags||[]).map(x=>`<span class="tag ${x.c}">${x.t}</span>`).join("");
     document.getElementById('note'+i).innerHTML=tagHtml+(r.label?`<span>${r.label}</span>`:"");
@@ -473,6 +514,10 @@ function refresh(){
     const isOT=d.otMode==="ot"||d.otMode==="otRdo";
     document.getElementById('ot'+i).classList.toggle('bold-ot', isOT);
     document.getElementById('pay'+i).classList.toggle('bold-ot', isOT);
+    const extraLeaveAllowed=d.type==="ordinary" && d.otMode==="none";
+    const extraLeaveIsOpen=extraLeaveAllowed && extraLeaveOpen[i];
+    document.getElementById('extraLeaveAddBtn'+i).style.display=(extraLeaveAllowed && !extraLeaveIsOpen)?"":"none";
+    document.getElementById('extraLeaveWrap'+i).style.display=extraLeaveIsOpen?"":"none";
   });
   const s=settings();
   const superSacrifice=Math.min(s.superSacrifice, gross);
@@ -492,7 +537,7 @@ function handle(e){
   const t=e.target;
   if(t.dataset && t.dataset.i!==undefined){
     const i=+t.dataset.i, f=t.dataset.f;
-    if(f==="breakMin"||f==="leaveHrs") state[i][f]=parseFloat(t.value)||0;
+    if(f==="breakMin"||f==="leaveHrs"||f==="extraLeaveHrs") state[i][f]=parseFloat(t.value)||0;
     else state[i][f]=t.value;
     refresh();
     saveDays();
@@ -600,7 +645,9 @@ function leaveAccountingForOtherSavedPeriods(excludePeriodId, sincePeriodId){
 
       for(let idx=0; idx<DAYS.length; idx++){
         ordHoursTotal += calcDay(idx).ordH;
-        if(state[idx].type==="annual") leaveTakenHoursTotal += state[idx].leaveHrs;
+        const sd=state[idx];
+        if(sd.type==="annual") leaveTakenHoursTotal += sd.leaveHrs;
+        else if(sd.type==="ordinary" && sd.extraLeaveType==="annual" && sd.extraLeaveHrs>0) leaveTakenHoursTotal += sd.extraLeaveHrs;
       }
     }
   } finally {
@@ -636,6 +683,8 @@ function applyStateToDOM(){
     setVal(`#finish${i}`, d.finish);
     setVal(`[data-i="${i}"][data-f="breakMin"]`, d.breakMin);
     setVal(`[data-i="${i}"][data-f="leaveHrs"]`, d.leaveHrs);
+    setVal(`[data-i="${i}"][data-f="extraLeaveType"]`, d.extraLeaveType);
+    setVal(`[data-i="${i}"][data-f="extraLeaveHrs"]`, d.extraLeaveHrs);
   });
 }
 
@@ -646,6 +695,7 @@ function loadDaysIntoState(){
     if(saved && saved[i]) Object.assign(base, saved[i]);
     return base;
   });
+  extraLeaveOpen = state.map(d => d.type==="ordinary" && d.extraLeaveHrs>0);
   applyStateToDOM();
 }
 
@@ -678,8 +728,23 @@ function clearAll(){
   const ok = confirm("Clear all entries for this fortnight?\n\nThis resets every day's times, day type and shift basis. Your rate settings are not affected.");
   if(!ok) return;
   state = DAYS.map(defaultDay);
+  extraLeaveOpen = state.map(()=>false);
   applyStateToDOM();
   saveDays();
+  refresh();
+}
+
+function toggleExtraLeave(i, show){
+  extraLeaveOpen[i] = show;
+  if(!show){
+    state[i].extraLeaveHrs = 0;
+    state[i].extraLeaveType = "annual";
+    const hrsEl = document.querySelector(`[data-i="${i}"][data-f="extraLeaveHrs"]`);
+    if(hrsEl) hrsEl.value = 0;
+    const typeEl = document.querySelector(`[data-i="${i}"][data-f="extraLeaveType"]`);
+    if(typeEl) typeEl.value = "annual";
+    saveDays();
+  }
   refresh();
 }
 
@@ -745,6 +810,7 @@ function importData(input){
       if(!state[i] || !d) return;
       Object.assign(state[i], d);
     });
+    extraLeaveOpen = state.map(d => d.type==="ordinary" && d.extraLeaveHrs>0);
     applyStateToDOM();
     saveSettings();
     saveDays();
