@@ -105,6 +105,19 @@
   <div class="field full" style="grid-column:1/-1;"><p class="set-note plain">Starting balance is the opening balance for the fortnight you were viewing when you last entered it. Every later fortnight's opening balance rolls forward from the previous one's closing balance — re-enter the starting balance only when you want to reset the chain (e.g. after checking a real payslip).</p></div>
 </div>
 
+<div class="week-label">Personal / sick leave — clause 7.2</div>
+<div class="totals">
+  <div class="tcard">
+    <div class="lab">Starting balance (hrs)</div>
+    <input type="number" id="sickLeaveStartBalance" step="0.01" min="0" value="0" style="margin-top:4px;">
+  </div>
+  <div class="tcard"><div class="lab">Opening balance</div><div class="val" id="sickLeaveOpening">0.0 hrs</div></div>
+  <div class="tcard"><div class="lab">Accrued this fortnight</div><div class="val" id="sickLeaveAccrued">0.0 hrs</div></div>
+  <div class="tcard"><div class="lab">Leave taken this fortnight</div><div class="val" id="sickLeaveTaken">0.0 hrs</div></div>
+  <div class="tcard big" style="grid-column:1/-1;"><div class="lab">Closing balance</div><div class="val" id="sickLeaveClosing">0.0 hrs</div></div>
+  <div class="field full" style="grid-column:1/-1;"><p class="set-note plain">Same rolling-balance rule as annual leave: starting balance is the opening balance for the fortnight you were viewing when you last entered it, and every later fortnight opens at the previous one's closing balance.</p></div>
+</div>
+
 <div class="fortnight-nav">
   <button type="button" id="prevFortnight" aria-label="Previous fortnight">&#8249;</button>
   <div class="fortnight-range" id="fortnightRange"></div>
@@ -290,6 +303,18 @@ const ORDINARY_HOURS_PER_WEEK = 38;
 const LEAVE_ENTITLEMENT_WEEKS_PER_YEAR = 5;
 const LEAVE_ACCRUAL_RATE_PER_ORDINARY_HOUR =
   (LEAVE_ENTITLEMENT_WEEKS_PER_YEAR * ORDINARY_HOURS_PER_WEEK) / (52 * ORDINARY_HOURS_PER_WEEK);
+
+// Personal/sick leave accrual — Star Gold Coast EBA 2026, clause 7.2(b).
+// Clause 7.2(b): entitlement is 10 days personal leave/yr. Clause 7.2(c): "Personal leave
+// entitlements accrue progressively on a team member's ordinary hours of work" — same
+// ordinary-hours basis as annual leave, overtime excluded.
+// Rate: 10 days x 7.6 hrs/day = 76 leave hrs/yr, against 52 wks x 38 hrs = 1976 ordinary
+// hrs/yr in a standard full-time year. 76 / 1976 = ~0.03846 leave hrs accrued per ordinary
+// hour. A standard fortnight of 76 ordinary hours therefore accrues 76 x 0.03846 = 2.923 hrs.
+const PERSONAL_LEAVE_ENTITLEMENT_DAYS_PER_YEAR = 10;
+const ORDINARY_HOURS_PER_DAY = ORDINARY_HOURS_PER_WEEK / 5;
+const SICK_LEAVE_ACCRUAL_RATE_PER_ORDINARY_HOUR =
+  (PERSONAL_LEAVE_ENTITLEMENT_DAYS_PER_YEAR * ORDINARY_HOURS_PER_DAY) / (52 * ORDINARY_HOURS_PER_WEEK);
 
 function defaultDay(){ return {start:"", finish:"", otMode:"none", type:"ordinary", breakMin:30, leaveHrs:7.6, extraLeaveType:"annual", extraLeaveHrs:0}; }
 let state = DAYS.map(defaultDay);
@@ -499,12 +524,14 @@ function buildDays(){
 
 // ---- Update only text/visibility. Inputs are untouched. ----
 function refresh(){
-  let ordH=0, otH=0, gross=0, leaveTakenH=0;
+  let ordH=0, otH=0, gross=0, leaveTakenH=0, sickLeaveTakenH=0;
   DAYS.forEach((meta,i)=>{
     const d=state[i], r=calcDay(i);
     ordH+=r.ordH; otH+=r.otH; gross+=r.pay;
     if(d.type==="annual") leaveTakenH+=d.leaveHrs;
     else if(d.type==="ordinary" && d.extraLeaveType==="annual" && d.extraLeaveHrs>0) leaveTakenH+=d.extraLeaveHrs;
+    if(d.type==="personal") sickLeaveTakenH+=d.leaveHrs;
+    else if(d.type==="ordinary" && d.extraLeaveType==="personal" && d.extraLeaveHrs>0) sickLeaveTakenH+=d.extraLeaveHrs;
     document.getElementById('pay'+i).textContent=fmt(r.pay);
     const tagHtml=(r.tags||[]).map(x=>`<span class="tag ${x.c}">${x.t}</span>`).join("");
     document.getElementById('note'+i).innerHTML=tagHtml+(r.label?`<span>${r.label}</span>`:"");
@@ -531,6 +558,7 @@ function refresh(){
   document.getElementById('totTax').textContent=fmt(tax);
   document.getElementById('totNet').textContent=fmt(taxableGross-tax);
   refreshLeaveTracker(ordH, leaveTakenH);
+  refreshSickLeaveTracker(ordH, sickLeaveTakenH);
   renderBackup();
 }
 
@@ -555,6 +583,9 @@ function handle(e){
   } else if(t.id==="leaveStartBalance"){
     refresh();
     saveLeaveBalance();
+  } else if(t.id==="sickLeaveStartBalance"){
+    refresh();
+    saveSickLeaveBalance();
   }
 }
 document.addEventListener('change', handle);
@@ -570,6 +601,10 @@ const LEAVE_BALANCE_KEY = 'payCalcLeaveBalanceV1';
 // from this point onward accrue on top of it — earlier fortnights are assumed to already
 // be reflected in that manually-entered figure, so they're not counted a second time.
 const LEAVE_BALANCE_AS_OF_KEY = 'payCalcLeaveBalanceAsOfPeriodV1';
+const SICK_LEAVE_BALANCE_KEY = 'payCalcSickLeaveBalanceV1';
+// Same rolling-anchor concept as LEAVE_BALANCE_AS_OF_KEY, tracked separately so annual
+// and sick leave can each be re-anchored (e.g. after checking a payslip) independently.
+const SICK_LEAVE_BALANCE_AS_OF_KEY = 'payCalcSickLeaveBalanceAsOfPeriodV1';
 function fortnightKey(periodId){ return 'paycalc:'+periodId; }
 
 function saveSettings(){
@@ -606,6 +641,27 @@ function leaveBalanceAsOfPeriodId(){
     // balance figure that presumably already accounts for them.
     asOf = PERIOD_ID;
     try { localStorage.setItem(LEAVE_BALANCE_AS_OF_KEY, asOf); } catch(e){}
+  }
+  return asOf;
+}
+
+function saveSickLeaveBalance(){
+  try {
+    localStorage.setItem(SICK_LEAVE_BALANCE_KEY, document.getElementById('sickLeaveStartBalance').value);
+    localStorage.setItem(SICK_LEAVE_BALANCE_AS_OF_KEY, PERIOD_ID);
+  } catch(e){}
+}
+function restoreSickLeaveBalance(){
+  let v;
+  try { v = localStorage.getItem(SICK_LEAVE_BALANCE_KEY); } catch(e){ v = null; }
+  if(v !== null){ const el=document.getElementById('sickLeaveStartBalance'); if(el) el.value = v; }
+}
+function sickLeaveBalanceAsOfPeriodId(){
+  let asOf;
+  try { asOf = localStorage.getItem(SICK_LEAVE_BALANCE_AS_OF_KEY); } catch(e){ asOf = null; }
+  if(!asOf){
+    asOf = PERIOD_ID;
+    try { localStorage.setItem(SICK_LEAVE_BALANCE_AS_OF_KEY, asOf); } catch(e){}
   }
   return asOf;
 }
@@ -700,6 +756,74 @@ function refreshLeaveTracker(currentPeriodOrdH, currentPeriodLeaveTakenH){
   document.getElementById('leaveTaken').textContent = ledger.taken.toFixed(2)+" hrs";
   document.getElementById('leaveClosing').textContent =
     ledger.closing.toFixed(2)+" hrs · "+(ledger.closing/ORDINARY_HOURS_PER_WEEK).toFixed(2)+" wks";
+}
+
+// Sick-leave equivalent of leaveAccountingForSavedPeriod — same calcDay-reuse technique,
+// but tallies "personal" type days / extraLeaveType instead of "annual".
+function sickLeaveAccountingForSavedPeriod(periodId, periodDate){
+  const saved = loadDaysForPeriod(periodId);
+  const savedState = state, savedDays = DAYS;
+  let ordH = 0, leaveTakenH = 0;
+  try {
+    DAYS = computeDays(periodDate);
+    state = DAYS.map((_, idx) => Object.assign(defaultDay(), saved && saved[idx]));
+    for(let idx=0; idx<DAYS.length; idx++){
+      ordH += calcDay(idx).ordH;
+      const sd = state[idx];
+      if(sd.type==="personal") leaveTakenH += sd.leaveHrs;
+      else if(sd.type==="ordinary" && sd.extraLeaveType==="personal" && sd.extraLeaveHrs>0) leaveTakenH += sd.extraLeaveHrs;
+    }
+  } finally {
+    state = savedState;
+    DAYS = savedDays;
+  }
+  return {ordH, leaveTakenH};
+}
+
+// Sick-leave equivalent of leaveLedgerForPeriod — identical rolling-forward logic, anchored
+// and accrued independently of annual leave via its own key and rate constant.
+function sickLeaveLedgerForPeriod(targetPeriodId, currentPeriodOrdH, currentPeriodLeaveTakenH){
+  const startBalance = parseFloat(document.getElementById('sickLeaveStartBalance').value) || 0;
+  const anchorPeriodId = sickLeaveBalanceAsOfPeriodId();
+
+  if(targetPeriodId < anchorPeriodId){
+    return {opening:startBalance, accrued:0, taken:0, closing:startBalance};
+  }
+
+  const [ay,am,ad] = anchorPeriodId.split('-').map(Number);
+  const anchorDate = new Date(ay, am-1, ad);
+  const [ty,tm,td] = targetPeriodId.split('-').map(Number);
+  const targetDate = new Date(ty, tm-1, td);
+  const steps = Math.round((targetDate - anchorDate) / (14*24*60*60*1000));
+
+  let balance = startBalance;
+  let openingForTarget = startBalance, accruedForTarget = 0, takenForTarget = 0;
+  for(let k=0; k<=steps; k++){
+    const periodDate = new Date(anchorDate);
+    periodDate.setDate(periodDate.getDate() + k*14);
+    const periodId = isoDate(periodDate);
+    const opening = balance;
+
+    const {ordH, leaveTakenH} = (periodId === PERIOD_ID)
+      ? {ordH:currentPeriodOrdH, leaveTakenH:currentPeriodLeaveTakenH}
+      : sickLeaveAccountingForSavedPeriod(periodId, periodDate);
+
+    const accrued = ordH * SICK_LEAVE_ACCRUAL_RATE_PER_ORDINARY_HOUR;
+    const closing = opening + accrued - leaveTakenH;
+
+    if(k===steps){ openingForTarget=opening; accruedForTarget=accrued; takenForTarget=leaveTakenH; }
+    balance = closing;
+  }
+
+  return {opening:openingForTarget, accrued:accruedForTarget, taken:takenForTarget, closing:balance};
+}
+
+function refreshSickLeaveTracker(currentPeriodOrdH, currentPeriodLeaveTakenH){
+  const ledger = sickLeaveLedgerForPeriod(PERIOD_ID, currentPeriodOrdH, currentPeriodLeaveTakenH);
+  document.getElementById('sickLeaveOpening').textContent = ledger.opening.toFixed(2)+" hrs";
+  document.getElementById('sickLeaveAccrued').textContent = ledger.accrued.toFixed(2)+" hrs";
+  document.getElementById('sickLeaveTaken').textContent = ledger.taken.toFixed(2)+" hrs";
+  document.getElementById('sickLeaveClosing').textContent = ledger.closing.toFixed(2)+" hrs";
 }
 
 // Push the in-memory `state` values into the existing form elements (never rebuilds them).
@@ -860,6 +984,7 @@ function renderBackup(){
 buildDays();
 restoreSettings();
 restoreLeaveBalance();
+restoreSickLeaveBalance();
 loadDaysIntoState();
 renderFortnightUI();
 refresh();
