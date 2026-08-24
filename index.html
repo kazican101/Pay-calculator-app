@@ -185,9 +185,15 @@
     <div class="field full"><label>Pre-tax (salary sacrifice) super $ per fortnight</label><input type="number" id="s_superSacrifice" value="0" step="0.01" min="0"></div>
     <div class="set-note plain">Deducted from gross before tax is calculated, and from take-home pay (it goes to your super fund, not your bank account).</div>
 
-    <div class="set-h">Tax estimate</div>
-    <div class="field full"><label>Effective tax rate on this fortnight (%)</label><input type="number" id="s_tax" value="24.5" step="0.1"></div>
-    <div class="set-note">Tax is an estimate only. Take the PAYG amount from a payslip with similar gross, divide by that gross, and enter your real rate here.</div>
+    <div class="set-h">Tax estimate — ATO PAYG withholding, 2026-27</div>
+    <div class="field full">
+      <label>Tax-free threshold</label>
+      <select id="s_taxScale">
+        <option value="1">Not claimed (Tax scale 1)</option>
+        <option value="2" selected>Claimed (Tax scale 2)</option>
+      </select>
+    </div>
+    <div class="set-note">Calculated automatically from your fortnightly gross (after pre-tax super) using the ATO PAYG fortnightly withholding formula (Medicare levy included, no HECS/HELP). It's a withholding estimate, not a full tax return calculation.</div>
   </div>
 </details>
 
@@ -316,6 +322,25 @@ const ORDINARY_HOURS_PER_DAY = ORDINARY_HOURS_PER_WEEK / 5;
 const SICK_LEAVE_ACCRUAL_RATE_PER_ORDINARY_HOUR =
   (PERSONAL_LEAVE_ENTITLEMENT_DAYS_PER_YEAR * ORDINARY_HOURS_PER_DAY) / (52 * ORDINARY_HOURS_PER_WEEK);
 
+// ATO PAYG fortnightly withholding, 2026-27 coefficients (Medicare levy included, no HECS/HELP).
+const TAX_SCALES = {
+  1: [[188,0.1500,0.1500],[371,0.2084,11.0185],[515,0.1790,0.1066],[932,0.3227,74.1674],
+      [2246,0.3200,71.6508],[3303,0.3900,228.8816],[Infinity,0.4700,493.1893]],
+  2: [[362,0,0],[538,0.15,54.3462],[673,0.25,108.2135],[721,0.17,54.3473],
+      [865,0.179,60.8377],[1282,0.3227,185.1935],[2596,0.32,181.7319],
+      [3653,0.39,363.4627],[Infinity,0.47,655.7704]],
+};
+function calcFortnightTax(fortnightGross, scale = 2) {
+  const rows = TAX_SCALES[scale];
+  const x = Math.floor(fortnightGross / 2 + 1e-9);
+  let weeklyTax = 0;
+  for (const [threshold, a, b] of rows) {
+    if (x < threshold) { weeklyTax = a * (x + 1) - b; break; }
+  }
+  weeklyTax = Math.max(0, Math.round(weeklyTax));
+  return Math.round(weeklyTax * 2);
+}
+
 function defaultDay(){ return {start:"", finish:"", otMode:"none", type:"ordinary", breakMin:30, leaveHrs:7.6, extraLeaveType:"annual", extraLeaveHrs:0}; }
 let state = DAYS.map(defaultDay);
 // Whether the "+ Add leave" section is expanded per day. UI-only (not persisted) —
@@ -331,7 +356,7 @@ function settings(){
     ot: {t1:num('s_ot1')/100, t2:num('s_ot2')/100, wknd:num('s_otWknd')/100},
     alLoad: num('s_alLoad')/100,
     superSacrifice: num('s_superSacrifice'),
-    tax: num('s_tax')/100,
+    taxScale: parseInt(document.getElementById('s_taxScale').value, 10) || 2,
   };
 }
 function dayMult(dow,s){ if(dow===6) return s.mult.sat; if(dow===0) return s.mult.sun; return s.mult.weekday; }
@@ -550,7 +575,7 @@ function refresh(){
   });
   const s=settings();
   const superSacrifice=Math.min(s.superSacrifice, gross);
-  const taxableGross=gross-superSacrifice, tax=taxableGross*s.tax;
+  const taxableGross=gross-superSacrifice, tax=calcFortnightTax(taxableGross, s.taxScale);
   document.getElementById('totOrd').textContent=ordH.toFixed(1);
   document.getElementById('totOT').textContent=otH.toFixed(1);
   document.getElementById('totGross').textContent=fmt(gross);
@@ -595,7 +620,7 @@ document.addEventListener('input', handle);
 // Day entries are stored per-fortnight, keyed by that fortnight's start date, so a new
 // fortnight never overwrites a previous one.
 const SETTINGS_KEY = 'payCalcSettingsV1';
-const SETTING_IDS = ['s_class','s_year','s_rate','s_mWeekday','s_mSat','s_mSun','s_mPH','s_pMorning','s_pAfternoon','s_pFriNight','s_ot1','s_ot2','s_otWknd','s_alLoad','s_superSacrifice','s_tax'];
+const SETTING_IDS = ['s_class','s_year','s_rate','s_mWeekday','s_mSat','s_mSun','s_mPH','s_pMorning','s_pAfternoon','s_pFriNight','s_ot1','s_ot2','s_otWknd','s_alLoad','s_superSacrifice','s_taxScale'];
 const LEAVE_BALANCE_KEY = 'payCalcLeaveBalanceV1';
 // The fortnight the starting balance was last entered/confirmed as of. Only fortnights
 // from this point onward accrue on top of it — earlier fortnights are assumed to already
