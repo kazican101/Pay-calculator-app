@@ -130,6 +130,7 @@
   <div class="tcard"><div class="lab">Gross pay</div><div class="val" id="totGross">$0</div></div>
   <div class="tcard"><div class="lab">Est. tax</div><div class="val" id="totTax">$0</div></div>
   <div class="tcard" style="grid-column:1/-1;"><div class="lab">Pre-tax super</div><div class="val" id="totSuper">$0</div></div>
+  <div class="tcard" style="grid-column:1/-1;"><div class="lab">Super (12% SG)</div><div class="val" id="totSuperSG">$0.00 (12%)</div></div>
   <div class="tcard big"><div class="lab">Estimated take-home</div><div class="val" id="totNet">$0</div></div>
 </div>
 <div class="clear-all-row">
@@ -341,6 +342,14 @@ function calcFortnightTax(fortnightGross, scale = 2) {
   return Math.round(weeklyTax * 2);
 }
 
+// Employer Superannuation Guarantee — 12% from 1 July 2025, on ordinary time earnings
+// (excludes overtime, per calcDay's ordH/otH split). Informational only: doesn't affect
+// gross pay or the tax calculation above.
+const SUPER_RATE = 0.12;
+function calcSuper(ordinaryEarnings) {
+  return Math.round(ordinaryEarnings * SUPER_RATE * 100) / 100;
+}
+
 function defaultDay(){ return {start:"", finish:"", otMode:"none", type:"ordinary", breakMin:30, leaveHrs:7.6, extraLeaveType:"annual", extraLeaveHrs:0}; }
 let state = DAYS.map(defaultDay);
 // Whether the "+ Add leave" section is expanded per day. UI-only (not persisted) —
@@ -549,10 +558,11 @@ function buildDays(){
 
 // ---- Update only text/visibility. Inputs are untouched. ----
 function refresh(){
-  let ordH=0, otH=0, gross=0, leaveTakenH=0, sickLeaveTakenH=0;
+  let ordH=0, otH=0, gross=0, ordPay=0, leaveTakenH=0, sickLeaveTakenH=0;
   DAYS.forEach((meta,i)=>{
     const d=state[i], r=calcDay(i);
     ordH+=r.ordH; otH+=r.otH; gross+=r.pay;
+    if(r.otH===0) ordPay+=r.pay;
     if(d.type==="annual") leaveTakenH+=d.leaveHrs;
     else if(d.type==="ordinary" && d.extraLeaveType==="annual" && d.extraLeaveHrs>0) leaveTakenH+=d.extraLeaveHrs;
     if(d.type==="personal") sickLeaveTakenH+=d.leaveHrs;
@@ -580,6 +590,7 @@ function refresh(){
   document.getElementById('totOT').textContent=otH.toFixed(1);
   document.getElementById('totGross').textContent=fmt(gross);
   document.getElementById('totSuper').textContent=fmt(superSacrifice);
+  document.getElementById('totSuperSG').textContent=fmt(calcSuper(ordPay))+" (12%)";
   document.getElementById('totTax').textContent=fmt(tax);
   document.getElementById('totNet').textContent=fmt(taxableGross-tax);
   refreshLeaveTracker(ordH, leaveTakenH);
