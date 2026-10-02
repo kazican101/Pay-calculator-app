@@ -65,8 +65,9 @@
   button { font-family: inherit; font-size: 14px; padding: 10px 14px; border-radius: 8px; border: 1px solid var(--line); background: #fff; color: var(--ink); cursor: pointer; }
   button.btn-primary { background: var(--green); color: #fff; border-color: var(--green); font-weight: 600; }
   button.btn-small { font-size: 0.78rem; padding: 5px 10px; margin-bottom: 8px; }
-  .extra-btns { display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 6px; margin-bottom: 8px; }
+  .extra-btns { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 6px; margin-bottom: 8px; }
   .extra-btns button.btn-small { margin-bottom: 0; padding: 6px 4px; line-height: 1.2; }
+  .extra-btns button[id^="extraAdd_ph"] { grid-column: 1 / -1; }
   .extra-remove { display: flex; align-items: flex-end; }
   .extra-remove button.btn-small { margin-bottom: 0; padding: 8px 10px; }
   button:active { opacity: 0.85; }
@@ -360,7 +361,7 @@ function calcSuper(ordinaryEarnings) {
 const EXTRAS = [
   {key:"annual", field:"extraAnnualHrs", add:"+ Annual leave",        label:"Annual leave hours"},
   {key:"sick",   field:"extraSickHrs",   add:"+ Sick leave",          label:"Sick leave hours"},
-  {key:"ph",     field:"extraPhHrs",     add:"+ Public holiday work", label:"Public holiday hours"},
+  {key:"ph",     field:"extraPhHrs",     add:"+ Public holiday worked", label:"Public holiday hours"},
 ];
 
 function defaultDay(){ return {start:"", finish:"", otMode:"none", type:"ordinary", breakMin:30, leaveHrs:7.6, extraAnnualHrs:0, extraSickHrs:0, extraPhHrs:0}; }
